@@ -1,4 +1,3 @@
-// fort-bend-county-scraper.js
 const axios = require('axios');
 const cheerio = require('cheerio');
 
@@ -456,5 +455,4 @@ class FortBendCountyScraper {
   }
 }
 
-// Make sure to export the class properly
 module.exports = FortBendCountyScraper;

@@ -107,12 +107,12 @@ button#fetch-btn:active {
 .field-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 12px; /* Reduced from 16px to save space */
+  gap: 12px; 
   margin-bottom: 16px;
   overflow-x: hidden; /* Prevent grid overflow */
 }
 
-/* Field row styling - now more compact for 2-column layout */
+/* Field row styling - 2-column layout */
 .field-row {
   display: flex;
   flex-direction: column;

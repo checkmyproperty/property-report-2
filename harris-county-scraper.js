@@ -1,4 +1,3 @@
-// harris-county-scraper.js - Updated with correct HCAD URLs
 const axios = require('axios');
 const cheerio = require('cheerio');
 
@@ -47,14 +46,8 @@ class HarrisCountyScraper {
         return result;
       }
       
-      // Fallback to mock data if search fails
-      console.log('📋 Using demonstration Harris County data');
-      return this.getEnhancedMockData(address);
-      
     } catch (error) {
       console.error('Harris County search error:', error.message);
-      console.log('📋 Falling back to demonstration data');
-      return this.getEnhancedMockData(address);
     }
   }
 
@@ -276,16 +269,10 @@ class HarrisCountyScraper {
         
         if (addressInputs.length > 0) {
           console.log(`Found ${addressInputs.length} address-related inputs in form ${i + 1}`);
-          // Could attempt form submission here, but due to bot detection, we'll skip to mock data
           break;
         }
       }
       
-      // For demo purposes, return that forms were found but search is not implemented
-      return { 
-        error: 'HCAD search forms found but automated search not implemented',
-        note: 'Manual verification would be required for actual county data access'
-      };
       
     } catch (error) {
       console.error('Error analyzing HCAD page:', error.message);
