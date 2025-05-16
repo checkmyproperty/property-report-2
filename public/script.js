@@ -1,0 +1,461 @@
+
+// Initialize PDF.js
+pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.14.305/pdf.worker.min.js';
+
+// Utility functions
+function fmtMoney(v) {
+  if (v == null || v === '' || isNaN(v)) return 'n/a';
+  return `$${Number(v).toLocaleString()}`;
+}
+
+function fmtDate(v) {
+  if (!v) return 'n/a';
+  const d = new Date(v);
+  return !isNaN(d.getTime()) ? d.toLocaleDateString() : 'n/a';
+}
+
+// PDF rendering variables
+let pdfDoc = null,
+  pageNum = 1,
+  pageRendering = false,
+  pageNumPending = null;
+const scale = 1.2;
+
+const canvas = document.createElement('canvas');
+const ctx = canvas.getContext('2d');
+document.getElementById('pdf-preview').appendChild(canvas);
+
+// Store fetched data for real-time updates - ATTOM + County only
+let storedData = {
+  attom: {},
+  county: {}
+};
+
+// PDF rendering functions
+function renderPage(num) {
+  pageRendering = true;
+  pdfDoc.getPage(num).then(page => {
+    const viewport = page.getViewport({ scale });
+    canvas.width = viewport.width;
+    canvas.height = viewport.height;
+    page.render({ canvasContext: ctx, viewport }).promise.then(() => {
+      pageRendering = false;
+      if (pageNumPending !== null) {
+        renderPage(pageNumPending);
+        pageNumPending = null;
+      }
+    });
+    document.getElementById('current-page').textContent = num;
+  });
+}
+
+function queueRenderPage(num) {
+  if (pageRendering) pageNumPending = num;
+  else renderPage(num);
+}
+
+// Event listeners for PDF navigation
+document.getElementById('prev-page').addEventListener('click', () => {
+  if (pageNum > 1) {
+    pageNum--;
+    queueRenderPage(pageNum);
+    updateNavigationButtons();
+  }
+});
+
+document.getElementById('next-page').addEventListener('click', () => {
+  if (pdfDoc && pageNum < pdfDoc.numPages) {
+    pageNum++;
+    queueRenderPage(pageNum);
+    updateNavigationButtons();
+  }
+});
+
+function updateNavigationButtons() {
+  document.getElementById('prev-page').disabled = pageNum <= 1;
+  document.getElementById('next-page').disabled = !pdfDoc || pageNum >= pdfDoc.numPages;
+}
+
+// UI helper functions
+function showLoading(show) {
+  document.getElementById('loading-overlay').classList.toggle('hidden', !show);
+}
+
+function setControls(enabled) {
+  document.getElementById('download-pdf').classList.toggle('disabled', !enabled);
+  updateNavigationButtons();
+}
+
+// Get selected data source for a field
+function getSelectedSource(field) {
+  const select = document.getElementById(`${field}-select`);
+  return select ? select.value : 'manual';
+}
+
+// Get the appropriate value based on source - ATTOM + County only
+function getValueBySource(field, transformFn = v => v) {
+  const source = getSelectedSource(field);
+  
+  if (source === 'attom') {
+    return getFieldValue(field, storedData.attom, transformFn);
+  } else if (source === 'county') {
+    return getFieldValue(field, storedData.county, transformFn);
+  }
+  
+  // For manual, return current input value
+  const input = document.getElementById(`${field}-input`);
+  return input ? input.value : 'n/a';
+}
+
+// Extract field value from API data - updated for county structure
+function getFieldValue(field, data, transformFn) {
+  let value = 'n/a';
+  
+  switch (field) {
+    case 'beds':
+      value = data.building?.rooms?.beds || data.bedrooms;
+      break;
+    case 'baths':
+      value = data.building?.rooms?.bathsfull || data.bathrooms;
+      break;
+    case 'rooms':
+      value = data.building?.rooms?.roomsTotal || data.totalRooms;
+      break;
+    case 'living':
+      value = data.building?.size?.livingsize || data.livingArea;
+      break;
+    case 'lot':
+      value = data.building?.lot?.lotsize1 || data.lotSize;
+      break;
+    case 'year':
+      value = data.building?.summary?.yearBuilt || data.yearBuilt;
+      break;
+    case 'construction':
+      value = data.building?.construction?.constructiontype || data.constructionType;
+      break;
+    case 'garage':
+      value = data.building?.parking?.garagetype || data.garage;
+      break;
+    case 'parking':
+      value = data.building?.parking?.prkgSpaces || data.parkingSpaces;
+      break;
+    case 'assessed':
+      value = data.assessment?.assessedValue || data.assessedValue;
+      break;
+    case 'land-value':
+      value = data.assessment?.landValue || data.landValue;
+      break;
+    case 'improvement-value':
+      value = data.assessment?.improvementValue || data.improvementValue;
+      break;
+    case 'tax':
+      value = data.assessment?.taxAmount || data.taxAmount;
+      break;
+    case 'last-sale-price':
+      value = data.sale?.saleAmount || data.lastSoldPrice;
+      break;
+    case 'last-sale-date':
+      value = data.sale?.saleDate || data.lastSoldDate;
+      break;
+    case 'school-district':
+      value = data.school?.district?.schoolDistrictName || data.schoolDistrict;
+      break;
+    case 'school-name':
+      value = data.school?.elementary?.[0]?.schoolName || data.schoolName;
+      break;
+    case 'school-score':
+      value = data.school?.elementary?.[0]?.testScore || data.schoolScore;
+      break;
+    case 'fire-risk':
+      value = data.natHazard?.fireRisk || data.fireRisk;
+      break;
+    case 'wind-risk':
+      value = data.natHazard?.windRisk || data.windRisk;
+      break;
+    case 'owner':
+      value = `${data.owner?.owner1?.firstname || ''} ${data.owner?.owner1?.lastname || ''}`.trim() || data.owner;
+      break;
+    case 'mailing':
+      value = data.owner?.mailingaddressoneline || data.mailingAddress;
+      break;
+  }
+  
+  return value != null ? transformFn(value) : 'n/a';
+}
+
+// Populate a field based on selected source - ATTOM + County only
+function populateField(field, attomVal, countyVal, transformFn = v => v) {
+  const source = getSelectedSource(field);
+  const input = document.getElementById(`${field}-input`);
+  if (!input) return;
+  
+  let value = 'n/a';
+  if (source === 'attom' && attomVal != null) {
+    value = transformFn(attomVal);
+  } else if (source === 'county' && countyVal != null) {
+    value = transformFn(countyVal);
+  }
+  // For manual source, don't override existing values
+  if (source !== 'manual' || !input.value) {
+    input.value = value;
+  }
+}
+
+// Update field value when dropdown changes
+function updateFieldValue(field) {
+  const input = document.getElementById(`${field}-input`);
+  if (!input) return;
+  
+  const source = getSelectedSource(field);
+  
+  // Apply appropriate transform function
+  let transformFn = v => v;
+  if (['assessed', 'land-value', 'improvement-value', 'tax', 'last-sale-price'].includes(field)) {
+    transformFn = fmtMoney;
+  } else if (field === 'last-sale-date') {
+    transformFn = fmtDate;
+  }
+  
+  if (source === 'attom') {
+    input.value = getFieldValue(field, storedData.attom, transformFn);
+  } else if (source === 'county') {
+    input.value = getFieldValue(field, storedData.county, transformFn);
+  }
+  // Don't change value for manual selection
+}
+
+// Add change listeners to all dropdowns and inputs
+function initializeDropdownListeners() {
+  const fields = [
+    'beds', 'baths', 'rooms', 'living', 'lot', 'year', 'construction',
+    'garage', 'parking', 'assessed', 'land-value', 'improvement-value', 'tax', 
+    'last-sale-price', 'last-sale-date', 'school-district', 'school-name', 
+    'school-score', 'fire-risk', 'wind-risk', 'owner', 'mailing'
+  ];
+  
+  fields.forEach(field => {
+    // Dropdown change listener
+    const select = document.getElementById(`${field}-select`);
+    if (select) {
+      select.addEventListener('change', () => {
+        updateFieldValue(field);
+        // Regenerate PDF with updated values
+        if (pdfDoc) {
+          generateUpdatedPDF();
+        }
+      });
+    }
+    
+    // Input field change listener for manual edits
+    const input = document.getElementById(`${field}-input`);
+    if (input) {
+      // Use 'input' event for real-time updates as user types
+      input.addEventListener('input', () => {
+        const source = getSelectedSource(field);
+        if (source === 'manual' && pdfDoc) {
+          // Debounce the PDF generation to avoid too many updates while typing
+          clearTimeout(input.debounceTimer);
+          input.debounceTimer = setTimeout(() => {
+            generateUpdatedPDF();
+          }, 500); // Wait 500ms after user stops typing
+        }
+      });
+      
+      // Also listen for 'change' event (when user loses focus)
+      input.addEventListener('change', () => {
+        const source = getSelectedSource(field);
+        if (source === 'manual' && pdfDoc) {
+          generateUpdatedPDF();
+        }
+      });
+    }
+  });
+}
+
+// Fetch data from backend
+async function fetchReportData(address) {
+  const res = await fetch(`/getPropertyReport?address=${encodeURIComponent(address)}`);
+  if (!res.ok) {
+    const errorText = await res.text();
+    throw new Error(`Data fetch failed: ${res.status} - ${errorText}`);
+  }
+  return res.json();
+}
+
+// Fetch PDF from backend
+async function fetchPdfBlob(address) {
+  const res = await fetch(`/downloadReport?address=${encodeURIComponent(address)}`);
+  if (!res.ok) {
+    const errorText = await res.text();
+    throw new Error(`PDF fetch failed: ${res.status} - ${errorText}`);
+  }
+  return res.blob();
+}
+
+// Generate updated PDF with current field values
+async function generateUpdatedPDF() {
+  const address = document.getElementById('address-input').value.trim();
+  if (!address) return;
+  
+  console.log('Generating updated PDF...'); // Debug log
+  
+  try {
+    // Get current values from all fields
+    const currentValues = {};
+    const fields = [
+      'beds', 'baths', 'rooms', 'living', 'lot', 'year', 'construction',
+      'garage', 'parking', 'assessed', 'land-value', 'improvement-value', 'tax', 
+      'last-sale-price', 'last-sale-date', 'school-district', 'school-name', 
+      'school-score', 'fire-risk', 'wind-risk', 'owner', 'mailing'
+    ];
+    
+    fields.forEach(field => {
+      const input = document.getElementById(`${field}-input`);
+      if (input) {
+        currentValues[field] = input.value;
+      }
+    });
+    
+    console.log('Current values:', currentValues); // Debug log
+    
+    // Send to backend with current values
+    const response = await fetch('/downloadReport', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        address: address,
+        currentValues: currentValues,
+        sources: storedData
+      })
+    });
+    
+    if (!response.ok) {
+      throw new Error(`PDF generation failed: ${response.status}`);
+    }
+    
+    const pdfBlob = await response.blob();
+    const buffer = await pdfBlob.arrayBuffer();
+    pdfDoc = await pdfjsLib.getDocument({ data: buffer }).promise;
+    
+    // Make sure we're still on the same page number
+    if (pageNum > pdfDoc.numPages) {
+      pageNum = 1;
+    }
+    
+    renderPage(pageNum);
+    document.getElementById('total-pages').textContent = pdfDoc.numPages;
+    
+    console.log('PDF updated successfully'); // Debug log
+    
+  } catch (error) {
+    console.error('PDF regeneration error:', error);
+    // Show error to user
+    const statusBox = document.getElementById('status-box');
+    statusBox.innerHTML = `<span style="color:red;">Error updating PDF: ${error.message}</span>`;
+  }
+}
+
+// Main fetch handler - ATTOM + County only
+async function handleFetch() {
+  const address = document.getElementById('address-input').value.trim();
+  if (!address) {
+    alert('Please enter an address');
+    return;
+  }
+  
+  const statusBox = document.getElementById('status-box');
+  showLoading(true);
+  setControls(false);
+  statusBox.textContent = `Fetching data for: ${address}...`;
+
+  try {
+    // Fetch property data
+    const { sources } = await fetchReportData(address);
+    console.log('Full response:', sources);
+    
+    // Store data for dropdown updates - ATTOM + County only
+    storedData.attom = sources.attom || {};
+    storedData.county = sources.county || {};
+    
+    // Check for errors in the responses
+    if (storedData.attom.error) console.warn('ATTOM error:', storedData.attom.error);
+    if (storedData.county.error) console.warn('County error:', storedData.county.error);
+
+    // Populate all fields with updated county paths
+    populateField('beds', storedData.attom.building?.rooms?.beds, storedData.county.bedrooms);
+    populateField('baths', storedData.attom.building?.rooms?.bathsfull, storedData.county.bathrooms);
+    populateField('rooms', storedData.attom.building?.rooms?.roomsTotal, storedData.county.totalRooms);
+    populateField('living', storedData.attom.building?.size?.livingsize, storedData.county.livingArea);
+    populateField('lot', storedData.attom.building?.lot?.lotsize1, storedData.county.lotSize);
+    populateField('year', storedData.attom.building?.summary?.yearBuilt, storedData.county.yearBuilt);
+    populateField('construction', storedData.attom.building?.construction?.constructiontype, storedData.county.constructionType);
+    populateField('garage', storedData.attom.building?.parking?.garagetype, storedData.county.garage);
+    populateField('parking', storedData.attom.building?.parking?.prkgSpaces, storedData.county.parkingSpaces);
+    populateField('assessed', storedData.attom.assessment?.assessedValue, storedData.county.assessedValue, fmtMoney);
+    populateField('land-value', storedData.attom.assessment?.landValue, storedData.county.landValue, fmtMoney);
+    populateField('improvement-value', storedData.attom.assessment?.improvementValue, storedData.county.improvementValue, fmtMoney);
+    populateField('tax', storedData.attom.assessment?.taxAmount, storedData.county.taxAmount, fmtMoney);
+    populateField('last-sale-price', storedData.attom.sale?.saleAmount, storedData.county.lastSoldPrice, fmtMoney);
+    populateField('last-sale-date', storedData.attom.sale?.saleDate, storedData.county.lastSoldDate, fmtDate);
+    populateField('school-district', storedData.attom.school?.district?.schoolDistrictName, null);
+    populateField('school-name', storedData.attom.school?.elementary?.[0]?.schoolName, null);
+    populateField('school-score', storedData.attom.school?.elementary?.[0]?.testScore, null);
+    populateField('fire-risk', storedData.attom.natHazard?.fireRisk, null);
+    populateField('wind-risk', storedData.attom.natHazard?.windRisk, null);
+    populateField('owner', 
+      `${storedData.attom.owner?.owner1?.firstname || ''} ${storedData.attom.owner?.owner1?.lastname || ''}`.trim(), 
+      storedData.county.owner
+    );
+    populateField('mailing', storedData.attom.owner?.mailingaddressoneline, storedData.county.mailingAddress);
+
+    // Fetch and display PDF
+    try {
+      const pdfBlob = await fetchPdfBlob(address);
+      const buffer = await pdfBlob.arrayBuffer();
+      pdfDoc = await pdfjsLib.getDocument({ data: buffer }).promise;
+      document.getElementById('total-pages').textContent = pdfDoc.numPages;
+      pageNum = 1;
+      renderPage(pageNum);
+      
+      const downloadBtn = document.getElementById('download-pdf');
+      downloadBtn.href = `/downloadReport?address=${encodeURIComponent(address)}`;
+      downloadBtn.download = `PropertyReport_${address.replace(/[^a-zA-Z0-9]/g, '_')}.pdf`;
+      
+      setControls(true);
+      
+      // Update status with county information
+      let statusMessage = '<span style="color:green;">Data successfully fetched and PDF generated.</span>';
+      if (storedData.county && !storedData.county.error) {
+        statusMessage += `<br><small>County data from: ${storedData.county.source || storedData.county.county || 'County Records'}</small>`;
+      }
+      statusBox.innerHTML = statusMessage;
+      
+    } catch (pdfError) {
+      console.error('PDF Error:', pdfError);
+      statusBox.innerHTML = `<span style="color:orange;">Data fetched but PDF generation failed: ${pdfError.message}</span>`;
+      setControls(false);
+    }
+    
+  } catch (err) {
+    console.error('Fetch Error:', err);
+    statusBox.innerHTML = `<span style="color:red;">Error: ${err.message}</span>`;
+    setControls(false);
+  } finally {
+    showLoading(false);
+  }
+}
+
+// Wait for DOM to be fully loaded before initializing
+document.addEventListener('DOMContentLoaded', function() {
+  // Event listeners
+  document.getElementById('fetch-btn').addEventListener('click', handleFetch);
+  document.getElementById('address-input').addEventListener('keydown', e => {
+    if (e.key === 'Enter') handleFetch();
+  });
+
+  // Initialize dropdown listeners and controls
+  initializeDropdownListeners();
+  setControls(false);
+});

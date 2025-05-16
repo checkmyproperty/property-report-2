@@ -1,0 +1,9 @@
+# Don't upload dependencies
+node_modules/
+
+# Don't upload secrets
+.env
+
+# MacOS & VS Code trash
+.DS_Store
+.vscode/
