@@ -150,6 +150,106 @@ class HarrisCountyScraper {
     }
   }
 
+  async parseSearchResults(html) {
+  try {
+    const $ = cheerio.load(html);
+    
+    // Check if we got search results
+    const resultRows = $('table tr, .search-result, .property-result');
+    
+    if (resultRows.length === 0) {
+      return { error: 'No search results found' };
+    }
+    
+    // Look for the first property link to get detailed information
+    const propertyLink = $('a[href*="property"], a[href*="detail"]').first();
+    
+    if (propertyLink.length) {
+      const detailUrl = propertyLink.attr('href');
+      const fullDetailUrl = detailUrl.startsWith('http') ? detailUrl : new URL(detailUrl, 'https://hcad.org').href;
+      
+      console.log(`Following property link: ${fullDetailUrl}`);
+      
+      // Navigate to detail page
+      await this.delay();
+      const detailResponse = await this.session.get(fullDetailUrl);
+      
+      if (detailResponse.status !== 200) {
+        return { error: `Property detail page error: ${detailResponse.status}` };
+      }
+      
+      // Extract property data from detail page
+      return this.parsePropertyDetailPage(detailResponse.data);
+    }
+    
+    // If no property link found, try to extract from current page as fallback
+    // (your existing fallback code)
+  } catch (error) {
+    console.error('Error parsing search results:', error.message);
+    return { error: `Results parsing failed: ${error.message}` };
+  }
+}
+
+// Add a new method to parse the property detail page
+async parsePropertyDetailPage(html) {
+  try {
+    const $ = cheerio.load(html);
+    const data = {
+      source: 'Harris County Appraisal District'
+    };
+    
+    // Extract property details
+    // HCAD usually has tables with property information
+    $('table').each((i, table) => {
+      const tableTitle = $(table).prev('h3, h4').text().trim();
+      
+      if (tableTitle.includes('Building')) {
+        // Extract building info (beds, baths, etc.)
+        $(table).find('tr').each((j, row) => {
+          const cells = $(row).find('td');
+          if (cells.length >= 2) {
+            const label = $(cells[0]).text().trim().toLowerCase();
+            const value = $(cells[1]).text().trim();
+            
+            if (label.includes('bedroom')) data.bedrooms = value;
+            if (label.includes('bath')) data.bathrooms = value;
+            if (label.includes('area') || label.includes('sq ft')) data.livingArea = value.replace(/[^\d.]/g, '');
+            if (label.includes('year built')) data.yearBuilt = value;
+          }
+        });
+      }
+      
+      if (tableTitle.includes('Value') || tableTitle.includes('Assessment')) {
+        // Extract value information
+        $(table).find('tr').each((j, row) => {
+          const cells = $(row).find('td');
+          if (cells.length >= 2) {
+            const label = $(cells[0]).text().trim().toLowerCase();
+            const value = $(cells[1]).text().trim().replace(/[$,]/g, '');
+            
+            if (label.includes('assessed')) data.assessedValue = value;
+            if (label.includes('land value')) data.landValue = value;
+            if (label.includes('improvement')) data.improvementValue = value;
+            if (label.includes('tax')) data.taxAmount = value;
+          }
+        });
+      }
+    });
+    
+    // Check if we got meaningful data
+    const hasData = Object.keys(data).length > 2; // More than just source and one field
+    
+    return hasData ? data : { 
+      error: 'Property found but data extraction incomplete',
+      partialData: data
+    };
+    
+  } catch (error) {
+    console.error('Error parsing property detail page:', error.message);
+    return { error: `Detail page parsing failed: ${error.message}` };
+  }
+}
+
   parseAddress(address) {
     // Parse address into components for HCAD form
     const cleanAddress = address.trim();
@@ -159,13 +259,14 @@ class HarrisCountyScraper {
     const streetNumber = streetNumberMatch ? streetNumberMatch[0] : '';
     
     // Extract street name (everything after the number, before city)
-    let streetName = cleanAddress;
+    let streetName = '';
     if (streetNumber) {
-      streetName = cleanAddress.replace(streetNumber, '').trim();
+    const afterNumber = cleanAddress.substring(streetNumber.length).trim();
+    const commaIndex = afterNumber.indexOf(',');
+    streetName = commaIndex > 0 ? afterNumber.substring(0, commaIndex).trim() : afterNumber;
     }
-    
-    // Remove city, state, zip from street name
-    streetName = streetName.split(',')[0].trim();
+
+    console.log(`Parsed address: Number=${streetNumber}, Name=${streetName}`);
     
     return {
       streetNumber,
