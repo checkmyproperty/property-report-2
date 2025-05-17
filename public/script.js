@@ -1,4 +1,3 @@
-
 // Initialize PDF.js
 pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.14.305/pdf.worker.min.js';
 
@@ -18,7 +17,8 @@ function fmtDate(v) {
 let pdfDoc = null,
   pageNum = 1,
   pageRendering = false,
-  pageNumPending = null;
+  pageNumPending = null,
+  currentPdfBlob = null; // Add this new variable to store the PDF blob
 const scale = 1.2;
 
 const canvas = document.createElement('canvas');
@@ -292,6 +292,24 @@ async function fetchPdfBlob(address) {
   return res.blob();
 }
 
+// Update the download button with the current PDF blob
+function updateDownloadButton(address) {
+  if (!currentPdfBlob) return;
+  
+  const downloadBtn = document.getElementById('download-pdf');
+  
+  // Revoke previous object URL if it exists
+  if (downloadBtn.dataset.objectUrl) {
+    URL.revokeObjectURL(downloadBtn.dataset.objectUrl);
+  }
+  
+  // Create a new object URL
+  const objectUrl = URL.createObjectURL(currentPdfBlob);
+  downloadBtn.href = objectUrl;
+  downloadBtn.dataset.objectUrl = objectUrl; // Store the URL for later cleanup
+  downloadBtn.download = `PropertyReport_${address.replace(/[^a-zA-Z0-9]/g, '_')}.pdf`;
+}
+
 // Generate updated PDF with current field values
 async function generateUpdatedPDF() {
   const address = document.getElementById('address-input').value.trim();
@@ -336,6 +354,7 @@ async function generateUpdatedPDF() {
     }
     
     const pdfBlob = await response.blob();
+    currentPdfBlob = pdfBlob; // Store the blob for direct download
     const buffer = await pdfBlob.arrayBuffer();
     pdfDoc = await pdfjsLib.getDocument({ data: buffer }).promise;
     
@@ -346,6 +365,9 @@ async function generateUpdatedPDF() {
     
     renderPage(pageNum);
     document.getElementById('total-pages').textContent = pdfDoc.numPages;
+    
+    // Update the download button with the new PDF
+    updateDownloadButton(address);
     
     console.log('PDF updated successfully'); // Debug log
     
@@ -413,15 +435,15 @@ async function handleFetch() {
     // Fetch and display PDF
     try {
       const pdfBlob = await fetchPdfBlob(address);
+      currentPdfBlob = pdfBlob; // Store the blob for direct download
       const buffer = await pdfBlob.arrayBuffer();
       pdfDoc = await pdfjsLib.getDocument({ data: buffer }).promise;
       document.getElementById('total-pages').textContent = pdfDoc.numPages;
       pageNum = 1;
       renderPage(pageNum);
       
-      const downloadBtn = document.getElementById('download-pdf');
-      downloadBtn.href = `/downloadReport?address=${encodeURIComponent(address)}`;
-      downloadBtn.download = `PropertyReport_${address.replace(/[^a-zA-Z0-9]/g, '_')}.pdf`;
+      // Update the download button with the blob URL
+      updateDownloadButton(address);
       
       setControls(true);
       
@@ -447,6 +469,14 @@ async function handleFetch() {
   }
 }
 
+// Cleanup function to be called when page unloads
+function cleanupObjectURLs() {
+  const downloadBtn = document.getElementById('download-pdf');
+  if (downloadBtn && downloadBtn.dataset.objectUrl) {
+    URL.revokeObjectURL(downloadBtn.dataset.objectUrl);
+  }
+}
+
 // Wait for DOM to be fully loaded before initializing
 document.addEventListener('DOMContentLoaded', function() {
   // Event listeners
@@ -458,4 +488,7 @@ document.addEventListener('DOMContentLoaded', function() {
   // Initialize dropdown listeners and controls
   initializeDropdownListeners();
   setControls(false);
+  
+  // Add cleanup for object URLs when page unloads
+  window.addEventListener('beforeunload', cleanupObjectURLs);
 });
