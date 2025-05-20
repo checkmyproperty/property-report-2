@@ -492,3 +492,43 @@ document.addEventListener('DOMContentLoaded', function() {
   // Add cleanup for object URLs when page unloads
   window.addEventListener('beforeunload', cleanupObjectURLs);
 });
+
+// Collapsible Section Functionality
+document.addEventListener('DOMContentLoaded', function() {
+  // Get all collapsible toggle buttons
+  const toggleButtons = document.querySelectorAll('.collapse-toggle');
+  
+  // Add click event listener to each toggle button
+  toggleButtons.forEach(button => {
+    button.addEventListener('click', function() {
+      // Toggle aria-expanded attribute
+      const isExpanded = button.getAttribute('aria-expanded') === 'true';
+      button.setAttribute('aria-expanded', !isExpanded);
+      
+      // Toggle collapsed class on the content section
+      const content = button.closest('.collapsible-section').querySelector('.section-content');
+      if (isExpanded) {
+        content.classList.add('collapsed');
+      } else {
+        content.classList.remove('collapsed');
+      }
+    });
+  });
+  
+  // Function to collapse all sections
+  function collapseAllSections() {
+    toggleButtons.forEach(button => {
+      button.setAttribute('aria-expanded', 'false');
+      const content = button.closest('.collapsible-section').querySelector('.section-content');
+      content.classList.add('collapsed');
+    });
+  }
+  
+  // Function to expand all sections
+  function expandAllSections() {
+    toggleButtons.forEach(button => {
+      button.setAttribute('aria-expanded', 'true');
+      const content = button.closest('.collapsible-section').querySelector('.section-content');
+      content.classList.remove('collapsed');
+    });
+  }

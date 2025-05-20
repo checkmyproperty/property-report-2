@@ -21,6 +21,7 @@ body {
   border-right: 1px solid #ddd;
   box-shadow: 2px 0 4px rgba(0,0,0,0.1);
   box-sizing: border-box; /* Include padding in width calculation */
+  max-height: 100vh;
 }
 
 .sidebar h2 {
@@ -80,6 +81,7 @@ button#fetch-btn:active {
 .selectors {
   border-top: 1px solid #eee;
   padding-top: 20px;
+  padding-bottom: 20px;
 }
 
 /* Section headers */
@@ -368,4 +370,53 @@ footer a.disabled {
 
 .sidebar::-webkit-scrollbar-thumb:hover {
   background: #a8a8a8;
+}
+
+/* Collapsible section styles */
+.collapsible-section {
+  margin-bottom: 10px;
+  border-bottom: 1px solid #e0e0e0;
+}
+
+.section-header {
+  margin: 0;
+  padding: 0;
+}
+
+.collapse-toggle {
+  background: none;
+  border: none;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  width: 100%;
+  text-align: left;
+  padding: 10px 5px;
+  font-size: 16px;
+  font-weight: bold;
+  color: #333;
+}
+
+.collapse-toggle:hover {
+  background-color: #f5f5f5;
+}
+
+.toggle-icon {
+  display: inline-block;
+  margin-right: 10px;
+  transition: transform 0.3s ease;
+}
+
+.section-content {
+  overflow: hidden;
+  transition: max-height 0.3s ease;
+  max-height: 1000px; /* Large enough to contain any content */
+}
+
+.section-content.collapsed {
+  max-height: 0;
+}
+
+.collapse-toggle[aria-expanded="false"] .toggle-icon {
+  transform: rotate(-90deg);
 }
