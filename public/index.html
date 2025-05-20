@@ -12,6 +12,17 @@
     <aside class="sidebar">
       <h2>Property Address</h2>
       <input id="address-input" type="text" placeholder="Enter address here" />
+      
+      <!-- Add County Selector -->
+      <div class="county-selector">
+        <label for="county-select">County:</label>
+        <select id="county-select">
+          <option value="harris">Harris County</option>
+          <option value="fortbend">Fort Bend County</option>
+          <option value="none">None (Skip Scraping)</option>
+        </select>
+      </div>
+      
       <button id="fetch-btn">Fetch Report</button>
       <div id="status-box">Enter address and click Fetch.</div>
 

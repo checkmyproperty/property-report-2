@@ -251,20 +251,30 @@ function initializeDropdownListeners() {
     if (input) {
       // Use 'input' event for real-time updates as user types
       input.addEventListener('input', () => {
-        const source = getSelectedSource(field);
-        if (source === 'manual' && pdfDoc) {
-          // Debounce the PDF generation to avoid too many updates while typing
-          clearTimeout(input.debounceTimer);
-          input.debounceTimer = setTimeout(() => {
-            generateUpdatedPDF();
-          }, 500); // Wait 500ms after user stops typing
+        // Auto-set dropdown to "manual" when field is edited
+        const select = document.getElementById(`${field}-select`);
+        if (select) {
+          select.value = 'manual';
         }
+        
+        // Debounce the PDF generation to avoid too many updates while typing
+        clearTimeout(input.debounceTimer);
+        input.debounceTimer = setTimeout(() => {
+          if (pdfDoc) {
+            generateUpdatedPDF();
+          }
+        }, 500); // Wait 500ms after user stops typing
       });
       
       // Also listen for 'change' event (when user loses focus)
       input.addEventListener('change', () => {
-        const source = getSelectedSource(field);
-        if (source === 'manual' && pdfDoc) {
+        // Auto-set dropdown to "manual" when field is edited
+        const select = document.getElementById(`${field}-select`);
+        if (select) {
+          select.value = 'manual';
+        }
+        
+        if (pdfDoc) {
           generateUpdatedPDF();
         }
       });
@@ -272,9 +282,13 @@ function initializeDropdownListeners() {
   });
 }
 
-// Fetch data from backend
+// Fetch data from backend based on county selection
 async function fetchReportData(address) {
-  const res = await fetch(`/getPropertyReport?address=${encodeURIComponent(address)}`);
+  const countySelect = document.getElementById('county-select');
+  const selectedCounty = countySelect ? countySelect.value : 'none';
+  
+  // Include county selection in the request
+  const res = await fetch(`/getPropertyReport?address=${encodeURIComponent(address)}&county=${selectedCounty}`);
   if (!res.ok) {
     const errorText = await res.text();
     throw new Error(`Data fetch failed: ${res.status} - ${errorText}`);
@@ -284,7 +298,10 @@ async function fetchReportData(address) {
 
 // Fetch PDF from backend
 async function fetchPdfBlob(address) {
-  const res = await fetch(`/downloadReport?address=${encodeURIComponent(address)}`);
+  const countySelect = document.getElementById('county-select');
+  const selectedCounty = countySelect ? countySelect.value : 'none';
+  
+  const res = await fetch(`/downloadReport?address=${encodeURIComponent(address)}&county=${selectedCounty}`);
   if (!res.ok) {
     const errorText = await res.text();
     throw new Error(`PDF fetch failed: ${res.status} - ${errorText}`);
@@ -337,6 +354,9 @@ async function generateUpdatedPDF() {
     console.log('Current values:', currentValues); // Debug log
     
     // Send to backend with current values
+    const countySelect = document.getElementById('county-select');
+    const selectedCounty = countySelect ? countySelect.value : 'none';
+    
     const response = await fetch('/downloadReport', {
       method: 'POST',
       headers: {
@@ -345,7 +365,8 @@ async function generateUpdatedPDF() {
       body: JSON.stringify({
         address: address,
         currentValues: currentValues,
-        sources: storedData
+        sources: storedData,
+        county: selectedCounty
       })
     });
     
@@ -379,6 +400,25 @@ async function generateUpdatedPDF() {
   }
 }
 
+// County-specific scraping functions
+function fetchHarrisCountyData(address) {
+  console.log('Fetching Harris County data for:', address);
+  const statusBox = document.getElementById('status-box');
+  statusBox.textContent = `Fetching Harris County data for ${address}...`;
+  
+  // Call your existing Harris County scraping code here
+  // This function should update storedData.county with results
+}
+
+function fetchFortBendCountyData(address) {
+  console.log('Fetching Fort Bend County data for:', address);
+  const statusBox = document.getElementById('status-box');
+  statusBox.textContent = `Fetching Fort Bend County data for ${address}...`;
+  
+  // Call your existing Fort Bend County scraping code here
+  // This function should update storedData.county with results
+}
+
 // Main fetch handler - ATTOM + County only
 async function handleFetch() {
   const address = document.getElementById('address-input').value.trim();
@@ -390,7 +430,22 @@ async function handleFetch() {
   const statusBox = document.getElementById('status-box');
   showLoading(true);
   setControls(false);
-  statusBox.textContent = `Fetching data for: ${address}...`;
+  
+  // Get county selection
+  const countySelect = document.getElementById('county-select');
+  const selectedCounty = countySelect ? countySelect.value : 'none';
+  
+  statusBox.textContent = `Fetching data for: ${address} (${selectedCounty === 'none' ? 'No County' : selectedCounty})...`;
+
+  // Use county-specific scraper based on selection
+  if (selectedCounty === 'harris') {
+    fetchHarrisCountyData(address);
+  } else if (selectedCounty === 'fortbend') {
+    fetchFortBendCountyData(address);
+  } else if (selectedCounty === 'none') {
+    // Skip county scraping
+    statusBox.textContent = `County scraping skipped. Using ATTOM data only.`;
+  }
 
   try {
     // Fetch property data
@@ -491,11 +546,8 @@ document.addEventListener('DOMContentLoaded', function() {
   
   // Add cleanup for object URLs when page unloads
   window.addEventListener('beforeunload', cleanupObjectURLs);
-});
-
-// Collapsible Section Functionality
-document.addEventListener('DOMContentLoaded', function() {
-  // Get all collapsible toggle buttons
+  
+  // Collapsible Section Functionality
   const toggleButtons = document.querySelectorAll('.collapse-toggle');
   
   // Add click event listener to each toggle button
@@ -514,21 +566,24 @@ document.addEventListener('DOMContentLoaded', function() {
       }
     });
   });
+
+  // AUTO-SELECT "MANUAL" WHEN FIELD IS EDITED - second implementation
+  // This is in addition to the listeners in initializeDropdownListeners
+  // Get all input fields
+  const fieldInputs = document.querySelectorAll('.field-input');
   
-  // Function to collapse all sections
-  function collapseAllSections() {
-    toggleButtons.forEach(button => {
-      button.setAttribute('aria-expanded', 'false');
-      const content = button.closest('.collapsible-section').querySelector('.section-content');
-      content.classList.add('collapsed');
+  fieldInputs.forEach(input => {
+    // For each input field, add an input event listener
+    input.addEventListener('input', function() {
+      // Find the associated select element (it's in the same parent div)
+      const parentGroup = this.closest('.input-source-group');
+      if (parentGroup) {
+        const selectElement = parentGroup.querySelector('.source-select');
+        if (selectElement) {
+          // Set the select to "manual" as the user is manually editing
+          selectElement.value = "manual";
+        }
+      }
     });
-  }
-  
-  // Function to expand all sections
-  function expandAllSections() {
-    toggleButtons.forEach(button => {
-      button.setAttribute('aria-expanded', 'true');
-      const content = button.closest('.collapsible-section').querySelector('.section-content');
-      content.classList.remove('collapsed');
-    });
-  }
+  });
+});
