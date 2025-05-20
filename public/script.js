@@ -460,6 +460,9 @@ async function handleFetch() {
     if (storedData.attom.error) console.warn('ATTOM error:', storedData.attom.error);
     if (storedData.county.error) console.warn('County error:', storedData.county.error);
 
+    // Display property image if available from ATTOM
+    displayPropertyImage(storedData.attom);
+
     // Populate all fields with updated county paths
     populateField('beds', storedData.attom.building?.rooms?.beds, storedData.county.bedrooms);
     populateField('baths', storedData.attom.building?.rooms?.bathsfull, storedData.county.bathrooms);
@@ -524,6 +527,77 @@ async function handleFetch() {
   }
 }
 
+// Display property image from ATTOM data if available
+function displayPropertyImage(attomData) {
+  // Remove any existing property image container
+  const existingContainer = document.getElementById('property-image-container');
+  if (existingContainer) {
+    existingContainer.remove();
+  }
+  
+  // Check if ATTOM data has an image URL
+  const imageUrl = attomData?.property?.photo?.[0]?.url || 
+                  attomData?.images?.[0]?.url || 
+                  attomData?.photo?.url ||
+                  null;
+  
+  if (imageUrl) {
+    // Create a container for the property image
+    const container = document.createElement('div');
+    container.id = 'property-image-container';
+    container.className = 'property-image-container';
+    
+    // Create the image element
+    const img = document.createElement('img');
+    img.src = imageUrl;
+    img.alt = 'Property Image';
+    img.onerror = function() {
+      // If image fails to load, show a message
+      this.style.display = 'none';
+      const errorMsg = document.createElement('div');
+      errorMsg.textContent = 'Property image unavailable';
+      errorMsg.style.padding = '20px';
+      errorMsg.style.backgroundColor = '#f8f9fa';
+      errorMsg.style.borderRadius = '4px';
+      container.appendChild(errorMsg);
+    };
+    
+    // Create a label
+    const label = document.createElement('div');
+    label.className = 'property-image-label';
+    label.textContent = 'Property Image from ATTOM';
+    
+    // Add elements to container
+    container.appendChild(img);
+    container.appendChild(label);
+    
+    // Insert container before status box
+    const statusBox = document.getElementById('status-box');
+    statusBox.parentNode.insertBefore(container, statusBox.nextSibling);
+  } else {
+    console.log('No property image available in ATTOM data');
+    
+    // Create placeholder image container
+    const container = document.createElement('div');
+    container.id = 'property-image-container';
+    container.className = 'property-image-container';
+    
+    // Create placeholder image or message
+    const placeholderMsg = document.createElement('div');
+    placeholderMsg.textContent = 'No property image available';
+    placeholderMsg.style.padding = '20px';
+    placeholderMsg.style.backgroundColor = '#f8f9fa';
+    placeholderMsg.style.borderRadius = '4px';
+    
+    // Add to container
+    container.appendChild(placeholderMsg);
+    
+    // Insert container before status box
+    const statusBox = document.getElementById('status-box');
+    statusBox.parentNode.insertBefore(container, statusBox.nextSibling);
+  }
+}
+
 // Cleanup function to be called when page unloads
 function cleanupObjectURLs() {
   const downloadBtn = document.getElementById('download-pdf');
@@ -566,6 +640,36 @@ document.addEventListener('DOMContentLoaded', function() {
       }
     });
   });
+
+  // Function to collapse all sections
+  function collapseAllSections() {
+    toggleButtons.forEach(button => {
+      button.setAttribute('aria-expanded', 'false');
+      const content = button.closest('.collapsible-section').querySelector('.section-content');
+      content.classList.add('collapsed');
+    });
+  }
+  
+  // Function to expand all sections
+  function expandAllSections() {
+    toggleButtons.forEach(button => {
+      button.setAttribute('aria-expanded', 'true');
+      const content = button.closest('.collapsible-section').querySelector('.section-content');
+      content.classList.remove('collapsed');
+    });
+  }
+  
+  // Add event listeners for collapse/expand all buttons
+  const collapseAllBtn = document.getElementById('collapse-all-btn');
+  const expandAllBtn = document.getElementById('expand-all-btn');
+  
+  if (collapseAllBtn) {
+    collapseAllBtn.addEventListener('click', collapseAllSections);
+  }
+  
+  if (expandAllBtn) {
+    expandAllBtn.addEventListener('click', expandAllSections);
+  }
 
   // AUTO-SELECT "MANUAL" WHEN FIELD IS EDITED - second implementation
   // This is in addition to the listeners in initializeDropdownListeners

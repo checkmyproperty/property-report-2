@@ -23,9 +23,7 @@ try {
   HarrisCountyScraper = require('./harris-county-scraper');
   harrisCountyScraper = new HarrisCountyScraper();
 } catch (error) {
-  console.error('Error loading HarrisCountyScraper:', error.message);
-  console.log('Creating mock HarrisCountyScraper...');
-  
+  console.error('Error loading HarrisCountyScraper:', error.message);  
 }
 
 try {
@@ -33,7 +31,6 @@ try {
   fortBendCountyScraper = new FortBendCountyScraper();
 } catch (error) {
   console.error('Error loading FortBendCountyScraper:', error.message);
-  console.log('Creating mock FortBendCountyScraper...');
 };
 
 
@@ -128,8 +125,60 @@ async function fetchCountyData(address) {
   }
 }
 
-// Updated property data fetch function - ATTOM + County only
-async function fetchPropertyData(address) {
+// Updated property data fetch function - ATTOM + Selected County only
+async function fetchPropertyData(address, selectedCounty = null) {
+  console.log(`Fetching property data for ${address}, selected county: ${selectedCounty || 'none'}`);
+  
+  // If selectedCounty is 'none', skip county data fetch
+  if (selectedCounty === 'none') {
+    console.log('County scraping skipped as per user selection');
+    const attom = await fetchAttom(address);
+    return { 
+      address, 
+      sources: { 
+        attom, 
+        county: { 
+          error: 'County data fetch skipped by user',
+          skipReason: 'User selected to skip county data'
+        } 
+      } 
+    };
+  }
+  
+  // For specific county selection
+  if (selectedCounty) {
+    let countyData = { error: 'Selected county scraper not available' };
+    
+    // Use only the selected county scraper
+    if (selectedCounty === 'harris' && harrisCountyScraper) {
+      console.log('Using Harris County scraper as selected by user');
+      try {
+        countyData = await harrisCountyScraper.searchProperty(address);
+        countyData.county = 'Harris County';
+      } catch (err) {
+        countyData = { 
+          error: `Harris County scraper error: ${err.message}`,
+          county: 'Harris County'
+        };
+      }
+    } else if (selectedCounty === 'fortbend' && fortBendCountyScraper) {
+      console.log('Using Fort Bend County scraper as selected by user');
+      try {
+        countyData = await fortBendCountyScraper.searchProperty(address);
+        countyData.county = 'Fort Bend County';
+      } catch (err) {
+        countyData = { 
+          error: `Fort Bend County scraper error: ${err.message}`,
+          county: 'Fort Bend County'
+        };
+      }
+    }
+    
+    const attom = await fetchAttom(address);
+    return { address, sources: { attom, county: countyData } };
+  }
+  
+  // Default behavior - try to determine county automatically
   const [attom, county] = await Promise.all([
     fetchAttom(address),
     fetchCountyData(address)
@@ -213,7 +262,29 @@ function generatePDFResponse(res, address, sources, currentValues) {
     doc.text(`Data Source: ${county.source || county.county || 'County Records'}`, { align: 'center' });
   }
   doc.fillColor('black').moveDown();
-
+  // Check for property image in ATTOM data and add it to the PDF
+  const imageUrl = attom?.property?.photo?.[0]?.url || 
+                  attom?.images?.[0]?.url || 
+                  attom?.photo?.url;
+  
+  if (imageUrl) {
+    console.log('Adding property image to PDF:', imageUrl);
+    try {
+      // Download and add image to PDF
+      doc.image(imageUrl, {
+        fit: [400, 300],
+        align: 'center'
+      });
+      doc.fontSize(10).text('Property Image from ATTOM', { align: 'center' });
+      doc.moveDown();
+    } catch (error) {
+      console.error('Error adding image to PDF:', error.message);
+      doc.fontSize(10).text('Property image could not be loaded', { align: 'center' });
+      doc.moveDown();
+    }
+  } else {
+    console.log('No property image available in ATTOM data');
+  }
   // Property Details Section
   doc.fontSize(16).text('Property Details', { underline: true });
   doc.fontSize(12).fillColor('black')
@@ -362,7 +433,6 @@ app.get('/test-county', async (req, res) => {
       attemptedCounty: attemptedCounty,
       actualCounty: result.county || 'Unknown',
       success: !result.error,
-      usingMockData: result.note && result.note.includes('Demo'),
       data: result
     };
     
@@ -431,15 +501,17 @@ app.get('/test-both', async (req, res) => {
   }
 });
 
-// Main Routes
+// Update the routes to support county selection
 app.get('/getPropertyReport', async (req, res) => {
   const address = req.query.address || '';
+  const county = req.query.county || null; // Get county from query param
+  
   if (!address) {
     return res.status(400).json({ error: 'Address parameter is required' });
   }
   
   try {
-    const data = await fetchPropertyData(address);
+    const data = await fetchPropertyData(address, county);
     res.json(data);
   } catch (err) {
     console.error('API Error:', err);
@@ -450,12 +522,14 @@ app.get('/getPropertyReport', async (req, res) => {
 // PDF download API - GET version
 app.get('/downloadReport', async (req, res) => {
   const address = req.query.address || '';
+  const county = req.query.county || null; // Get county from query param
+  
   if (!address) {
     return res.status(400).send('Address parameter is required');
   }
   
   try {
-    const { sources } = await fetchPropertyData(address);
+    const { sources } = await fetchPropertyData(address, county);
     generatePDFResponse(res, address, sources, {});
   } catch (err) {
     console.error('PDF Error:', err);
@@ -468,7 +542,7 @@ app.post('/downloadReport', async (req, res) => {
   console.log('POST /downloadReport called');
   console.log('Request body:', req.body);
   
-  const { address, currentValues, sources } = req.body;
+  const { address, currentValues, sources, county } = req.body;
   
   if (!address) {
     return res.status(400).send('Address parameter is required');
@@ -476,7 +550,7 @@ app.post('/downloadReport', async (req, res) => {
   
   try {
     // Use provided sources if available, otherwise fetch fresh data
-    const dataSources = sources || (await fetchPropertyData(address)).sources;
+    const dataSources = sources || (await fetchPropertyData(address, county)).sources;
     generatePDFResponse(res, address, dataSources, currentValues || {});
   } catch (err) {
     console.error('PDF Error:', err);
