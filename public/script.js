@@ -282,6 +282,33 @@ function initializeDropdownListeners() {
   });
 }
 
+// Function to clear all fields
+function clearAllFields() {
+  console.log('Clearing all form fields');
+  
+  // List of all field IDs to clear
+  const fields = [
+    'beds', 'baths', 'rooms', 'living', 'lot', 'year', 'construction',
+    'garage', 'parking', 'assessed', 'land-value', 'improvement-value', 'tax', 
+    'last-sale-price', 'last-sale-date', 'school-district', 'school-name', 
+    'school-score', 'fire-risk', 'wind-risk', 'owner', 'mailing'
+  ];
+  
+  // Clear each input field
+  fields.forEach(field => {
+    const input = document.getElementById(`${field}-input`);
+    if (input) {
+      input.value = '';
+    }
+  });
+  
+  // Remove any property image if present
+  const existingContainer = document.getElementById('property-image-container');
+  if (existingContainer) {
+    existingContainer.remove();
+  }
+}
+
 // Fetch data from backend based on county selection
 async function fetchReportData(address) {
   const countySelect = document.getElementById('county-select');
@@ -406,7 +433,7 @@ function fetchHarrisCountyData(address) {
   const statusBox = document.getElementById('status-box');
   statusBox.textContent = `Fetching Harris County data for ${address}...`;
   
-  // Make an API call to the backend to specifically fetch Harris County data
+  // Make an API call to your backend to specifically fetch Harris County data
   return fetch(`/fetch-county-data?address=${encodeURIComponent(address)}&county=harris`)
     .then(response => {
       if (!response.ok) {
@@ -445,7 +472,7 @@ function fetchFortBendCountyData(address) {
   const statusBox = document.getElementById('status-box');
   statusBox.textContent = `Fetching Fort Bend County data for ${address}...`;
   
-  // Make an API call to the backend to specifically fetch Fort Bend County data
+  // Make an API call to your backend to specifically fetch Fort Bend County data
   return fetch(`/fetch-county-data?address=${encodeURIComponent(address)}&county=fortbend`)
     .then(response => {
       if (!response.ok) {
@@ -486,6 +513,9 @@ async function handleFetch() {
     alert('Please enter an address');
     return;
   }
+  
+  // Clear all form fields before fetching new data
+  clearAllFields();
   
   const statusBox = document.getElementById('status-box');
   showLoading(true);
@@ -666,8 +696,135 @@ function cleanupObjectURLs() {
   }
 }
 
+// Field generation system
+// Define field groups with their fields
+const fieldGroups = [
+  {
+    title: "Property Details",
+    fields: [
+      { id: "beds", label: "Beds", placeholder: "Beds" },
+      { id: "baths", label: "Baths", placeholder: "Baths" },
+      { id: "rooms", label: "Total Rooms", placeholder: "Rooms" },
+      { id: "year", label: "Year Built", placeholder: "Year Built" },
+      { id: "living", label: "Living Area (sqft)", placeholder: "Living Area" },
+      { id: "lot", label: "Lot Size (sqft)", placeholder: "Lot Size" },
+      { id: "construction", label: "Construction Type", placeholder: "Construction Type" },
+      { id: "garage", label: "Garage", placeholder: "Garage" },
+      { id: "parking", label: "Parking Spaces", placeholder: "Parking Spaces" }
+    ]
+  },
+  {
+    title: "Financial Information",
+    fields: [
+      { id: "assessed", label: "Assessed Value", placeholder: "Assessed Value" },
+      { id: "land-value", label: "Land Value", placeholder: "Land Value" },
+      { id: "improvement-value", label: "Improvement Value", placeholder: "Improvement Value" },
+      { id: "tax", label: "Tax Amount", placeholder: "Tax Amount" },
+      { id: "last-sale-price", label: "Last Sale Price", placeholder: "Last Sale Price" },
+      { id: "last-sale-date", label: "Last Sale Date", placeholder: "Last Sale Date" }
+    ]
+  },
+  {
+    title: "School Information",
+    fields: [
+      { id: "school-district", label: "School District", placeholder: "School District" },
+      { id: "school-name", label: "School Name", placeholder: "School Name" },
+      { id: "school-score", label: "School Score", placeholder: "School Score" }
+    ]
+  },
+  {
+    title: "Risk Assessment",
+    fields: [
+      { id: "fire-risk", label: "Fire Risk", placeholder: "Fire Risk" },
+      { id: "wind-risk", label: "Wind Risk", placeholder: "Wind Risk" }
+    ]
+  },
+  {
+    title: "Owner Information",
+    fields: [
+      { id: "owner", label: "Owner", placeholder: "Owner" },
+      { id: "mailing", label: "Mailing Address", placeholder: "Mailing Address" }
+    ]
+  }
+];
+
+// Helper function to generate the fields HTML
+function generateFields(fields) {
+  let html = '';
+  
+  // Group fields in pairs for a 2-column layout
+  for (let i = 0; i < fields.length; i += 2) {
+    html += '<div class="field-grid">';
+    
+    // Add the first field
+    html += createField(fields[i]);
+    
+    // Add the second field if it exists
+    if (i + 1 < fields.length) {
+      html += createField(fields[i + 1]);
+    }
+    
+    html += '</div>';
+  }
+  
+  return html;
+}
+
+// Create HTML for a single field
+function createField(field) {
+  return `
+    <div class="field-row">
+      <label>${field.label}</label>
+      <div class="input-source-group">
+        <input id="${field.id}-input" type="text" placeholder="${field.placeholder}" class="field-input" />
+        <select id="${field.id}-select" class="source-select">
+          <option value="attom">ATTOM</option>
+          <option value="county">County</option>
+          <option value="manual">Manual</option>
+        </select>
+      </div>
+    </div>
+  `;
+}
+
 // Wait for DOM to be fully loaded before initializing
 document.addEventListener('DOMContentLoaded', function() {
+  // Generate form fields from our configuration
+  const selectorsContainer = document.querySelector('.selectors');
+  
+  // Only generate if the container exists and we haven't already generated the fields
+  if (selectorsContainer && !window.fieldsGenerated) {
+    // Clear existing content
+    selectorsContainer.innerHTML = ''; 
+    
+    // Generate each section
+    fieldGroups.forEach(group => {
+      // Create section element
+      const section = document.createElement('div');
+      section.className = 'collapsible-section';
+      
+      // Add section header
+      section.innerHTML = `
+        <h3 class="section-header">
+          <button class="collapse-toggle" aria-expanded="true">
+            <span class="toggle-icon">▼</span>
+            ${group.title}
+          </button>
+        </h3>
+        <div class="section-content">
+          <div class="field-container">
+            ${generateFields(group.fields)}
+          </div>
+        </div>
+      `;
+      
+      selectorsContainer.appendChild(section);
+    });
+    
+    // Mark that we've generated the fields
+    window.fieldsGenerated = true;
+  }
+
   // Event listeners
   document.getElementById('fetch-btn').addEventListener('click', handleFetch);
   document.getElementById('address-input').addEventListener('keydown', e => {

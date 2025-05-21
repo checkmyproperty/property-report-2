@@ -428,3 +428,57 @@ footer a.disabled {
 .collapse-toggle[aria-expanded="false"] .toggle-icon {
   transform: rotate(-90deg);
 }
+
+/* styling for collapse/expand buttons */
+.collapse-controls {
+  display: flex;
+  gap: 10px;
+  margin: 15px 0;
+  justify-content: center;
+}
+
+.collapse-controls button {
+  background-color: #f0f2f5;
+  border: 1px solid #d9d9d9;
+  border-radius: 4px;
+  padding: 6px 12px;
+  font-size: 13px;
+  color: #333;
+  cursor: pointer;
+  transition: all 0.2s ease-in-out;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.collapse-controls button:hover {
+  background-color: #e6e8eb;
+  border-color: #bbb;
+}
+
+.collapse-controls button:active {
+  background-color: #d9d9d9;
+  transform: translateY(1px);
+}
+
+/* Add icons to the buttons */
+.collapse-controls button::before {
+  content: "";
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  margin-right: 5px;
+  background-size: contain;
+  background-repeat: no-repeat;
+  background-position: center;
+}
+
+#collapse-all-btn::before {
+  content: "▼";
+  font-size: 10px;
+}
+
+#expand-all-btn::before {
+  content: "▲";
+  font-size: 10px;
+}
