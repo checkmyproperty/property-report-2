@@ -356,6 +356,26 @@ function updateDownloadButton(address) {
 
 // Generate updated PDF with current field values
 async function generateUpdatedPDF() {
+  const requestBody = {
+    address: address,
+    currentValues: currentValues,
+    sources: storedData,
+    county: selectedCounty
+  };
+  
+  // Add the uploaded image if available
+  if (window.reportData && window.reportData.uploadedImage) {
+    requestBody.uploadedImage = window.reportData.uploadedImage;
+  }
+  
+  // Send the POST request with the updated body
+  const response = await fetch('/downloadReport', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify(requestBody)
+  });
   const address = document.getElementById('address-input').value.trim();
   if (!address) return;
   
@@ -406,7 +426,7 @@ async function generateUpdatedPDF() {
     const buffer = await pdfBlob.arrayBuffer();
     pdfDoc = await pdfjsLib.getDocument({ data: buffer }).promise;
     
-    // Make sure we're still on the same page number
+    // Make sure it's still on the same page number
     if (pageNum > pdfDoc.numPages) {
       pageNum = 1;
     }
@@ -617,13 +637,21 @@ async function handleFetch() {
   }
 }
 
-// Display property image from ATTOM data if available
 function displayPropertyImage(attomData) {
-  // Remove any existing property image container
-  const existingContainer = document.getElementById('property-image-container');
-  if (existingContainer) {
-    existingContainer.remove();
+  // Get the property image container
+  let container = document.getElementById('property-image-container');
+  
+  // If no container exists yet, create it
+  if (!container) {
+    // Container might not exist if we're using the new section approach
+    container = document.querySelector('.property-image-container');
+    
+    // If we still don't have a container, return
+    if (!container) return;
   }
+  
+  // Clear the container
+  container.innerHTML = '';
   
   // Check if ATTOM data has an image URL
   const imageUrl = attomData?.property?.photo?.[0]?.url || 
@@ -632,24 +660,13 @@ function displayPropertyImage(attomData) {
                   null;
   
   if (imageUrl) {
-    // Create a container for the property image
-    const container = document.createElement('div');
-    container.id = 'property-image-container';
-    container.className = 'property-image-container';
-    
     // Create the image element
     const img = document.createElement('img');
     img.src = imageUrl;
     img.alt = 'Property Image';
     img.onerror = function() {
-      // If image fails to load, show a message
-      this.style.display = 'none';
-      const errorMsg = document.createElement('div');
-      errorMsg.textContent = 'Property image unavailable';
-      errorMsg.style.padding = '20px';
-      errorMsg.style.backgroundColor = '#f8f9fa';
-      errorMsg.style.borderRadius = '4px';
-      container.appendChild(errorMsg);
+      // If image fails to load, show upload option
+      showImageUploadOption(container);
     };
     
     // Create a label
@@ -657,35 +674,139 @@ function displayPropertyImage(attomData) {
     label.className = 'property-image-label';
     label.textContent = 'Property Image from ATTOM';
     
+    // Add image controls
+    const controls = document.createElement('div');
+    controls.className = 'image-controls';
+    
+    // Replace button
+    const replaceBtn = document.createElement('button');
+    replaceBtn.textContent = 'Replace Image';
+    replaceBtn.onclick = function() {
+      showImageUploadOption(container);
+    };
+    
+    controls.appendChild(replaceBtn);
+    
     // Add elements to container
     container.appendChild(img);
     container.appendChild(label);
-    
-    // Insert container before status box
-    const statusBox = document.getElementById('status-box');
-    statusBox.parentNode.insertBefore(container, statusBox.nextSibling);
+    container.appendChild(controls);
   } else {
-    console.log('No property image available in ATTOM data');
-    
-    // Create placeholder image container
-    const container = document.createElement('div');
-    container.id = 'property-image-container';
-    container.className = 'property-image-container';
-    
-    // Create placeholder image or message
-    const placeholderMsg = document.createElement('div');
-    placeholderMsg.textContent = 'No property image available';
-    placeholderMsg.style.padding = '20px';
-    placeholderMsg.style.backgroundColor = '#f8f9fa';
-    placeholderMsg.style.borderRadius = '4px';
-    
-    // Add to container
-    container.appendChild(placeholderMsg);
-    
-    // Insert container before status box
-    const statusBox = document.getElementById('status-box');
-    statusBox.parentNode.insertBefore(container, statusBox.nextSibling);
+    // Show upload option if no image available
+    showImageUploadOption(container);
   }
+}
+
+// Function to show image upload option
+function showImageUploadOption(container) {
+  // Create placeholder
+  const placeholder = document.createElement('div');
+  placeholder.className = 'image-placeholder';
+  
+  // Add placeholder text
+  const text = document.createElement('div');
+  text.className = 'placeholder-text';
+  text.textContent = 'No property image available';
+  
+  // Create upload button
+  const uploadLabel = document.createElement('label');
+  uploadLabel.className = 'upload-button';
+  uploadLabel.textContent = 'Upload Image';
+  uploadLabel.htmlFor = 'image-upload';
+  
+  // Create file input
+  const fileInput = document.createElement('input');
+  fileInput.type = 'file';
+  fileInput.id = 'image-upload';
+  fileInput.accept = 'image/*';
+  fileInput.style.display = 'none';
+  
+  // Add event listener for file selection
+  fileInput.addEventListener('change', handleImageUpload);
+  
+  // Add elements to placeholder
+  placeholder.appendChild(text);
+  placeholder.appendChild(uploadLabel);
+  placeholder.appendChild(fileInput);
+  
+  // Clear and add placeholder to container
+  container.innerHTML = '';
+  container.appendChild(placeholder);
+}
+
+// Function to handle image upload
+function handleImageUpload(event) {
+  const file = event.target.files[0];
+  if (!file) return;
+  
+  // Check if it's an image
+  if (!file.type.startsWith('image/')) {
+    alert('Please select an image file');
+    return;
+  }
+  
+  // Get container
+  const container = document.querySelector('.property-image-container');
+  if (!container) return;
+  
+  // Clear container
+  container.innerHTML = '';
+  
+  // Create image element
+  const img = document.createElement('img');
+  
+  // Use FileReader to load the image
+  const reader = new FileReader();
+  reader.onload = function(e) {
+    img.src = e.target.result;
+  };
+  reader.readAsDataURL(file);
+  
+  img.alt = 'Property Image';
+  
+  // Create label
+  const label = document.createElement('div');
+  label.className = 'property-image-label';
+  label.textContent = 'Uploaded Property Image';
+  
+  // Add image controls
+  const controls = document.createElement('div');
+  controls.className = 'image-controls';
+  
+  // Replace button
+  const replaceBtn = document.createElement('button');
+  replaceBtn.textContent = 'Replace Image';
+  replaceBtn.onclick = function() {
+    showImageUploadOption(container);
+  };
+  
+  // Add elements
+  controls.appendChild(replaceBtn);
+  container.appendChild(img);
+  container.appendChild(label);
+  container.appendChild(controls);
+  
+  // Store the image in the form data for submission with the report
+  const imgData = {
+    name: file.name,
+    type: file.type,
+    // Will be populated by the reader.onload event
+    dataUrl: null
+  };
+  
+  reader.onload = function(e) {
+    img.src = e.target.result;
+    imgData.dataUrl = e.target.result;
+    
+    // Store in the global data
+    if (!window.reportData) window.reportData = {};
+    window.reportData.uploadedImage = imgData;
+    
+    // Update PDF if one exists
+    if (pdfDoc) {
+      generateUpdatedPDF();
+    }
+  };
 }
 
 // Cleanup function to be called when page unloads

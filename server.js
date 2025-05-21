@@ -206,7 +206,7 @@ function getNestedValue(obj, path) {
 }
 
 // PDF generation function - uses county data + ATTOM
-function generatePDFResponse(res, address, sources, currentValues) {
+function generatePDFResponse(res, address, sources, currentValues, uploadedImage) {
   const { attom, county } = sources;
   
   console.log('Generating PDF with current values:', currentValues);
@@ -262,15 +262,30 @@ function generatePDFResponse(res, address, sources, currentValues) {
     doc.text(`Data Source: ${county.source || county.county || 'County Records'}`, { align: 'center' });
   }
   doc.fillColor('black').moveDown();
-  // Check for property image in ATTOM data and add it to the PDF
+  
+  // Add property image - First check for uploaded image, then ATTOM image
+if (uploadedImage && uploadedImage.dataUrl) {
+  // Use uploaded image if available
+  try {
+    doc.image(uploadedImage.dataUrl, {
+      fit: [400, 300],
+      align: 'center'
+    });
+    doc.fontSize(10).text('User Uploaded Property Image', { align: 'center' });
+    doc.moveDown();
+  } catch (error) {
+    console.error('Error adding uploaded image to PDF:', error.message);
+    doc.fontSize(10).text('Property image could not be loaded', { align: 'center' });
+    doc.moveDown();
+  }
+} else {
+  // Otherwise try to use ATTOM image
   const imageUrl = attom?.property?.photo?.[0]?.url || 
                   attom?.images?.[0]?.url || 
                   attom?.photo?.url;
   
   if (imageUrl) {
-    console.log('Adding property image to PDF:', imageUrl);
     try {
-      // Download and add image to PDF
       doc.image(imageUrl, {
         fit: [400, 300],
         align: 'center'
@@ -278,13 +293,16 @@ function generatePDFResponse(res, address, sources, currentValues) {
       doc.fontSize(10).text('Property Image from ATTOM', { align: 'center' });
       doc.moveDown();
     } catch (error) {
-      console.error('Error adding image to PDF:', error.message);
+      console.error('Error adding ATTOM image to PDF:', error.message);
       doc.fontSize(10).text('Property image could not be loaded', { align: 'center' });
       doc.moveDown();
     }
   } else {
-    console.log('No property image available in ATTOM data');
+    doc.fontSize(10).text('No property image available', { align: 'center' });
+    doc.moveDown();
   }
+}
+
   // Property Details Section
   doc.fontSize(16).text('Property Details', { underline: true });
   doc.fontSize(12).fillColor('black')
@@ -520,17 +538,21 @@ app.get('/getPropertyReport', async (req, res) => {
 });
 
 // PDF download API - GET version
-app.get('/downloadReport', async (req, res) => {
-  const address = req.query.address || '';
-  const county = req.query.county || null; // Get county from query param
+app.post('/downloadReport', async (req, res) => {
+  console.log('POST /downloadReport called');
+  
+  const { address, currentValues, sources, county, uploadedImage } = req.body;
   
   if (!address) {
     return res.status(400).send('Address parameter is required');
   }
   
   try {
-    const { sources } = await fetchPropertyData(address, county);
-    generatePDFResponse(res, address, sources, {});
+    // Use provided sources if available, otherwise fetch fresh data
+    const dataSources = sources || (await fetchPropertyData(address, county)).sources;
+    
+    // Pass the uploaded image to the PDF generator
+    generatePDFResponse(res, address, dataSources, currentValues || {}, uploadedImage);
   } catch (err) {
     console.error('PDF Error:', err);
     res.status(500).send(`PDF generation error: ${err.message}`);
