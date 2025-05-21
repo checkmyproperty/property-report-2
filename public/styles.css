@@ -44,42 +44,37 @@ body {
   font-size: 16px;
 }
 
-/* New layout for county selector and fetch button */
+/* New layout for single-line county selector and fetch button */
 .top-controls-container {
   display: flex;
+  align-items: center; /* Align items vertically in the center */
   gap: 10px;
   margin: 10px 0 20px 0;
-  align-items: flex-start;
 }
 
-/* Update county selector styling */
-.county-selector {
-  display: flex;
-  flex-direction: column;
-  width: 140px; /* Make it shorter */
-}
-
-.county-selector label {
+/* Label styling */
+.top-controls-container label {
   font-weight: 600;
-  margin-bottom: 4px;
   font-size: 13px;
   color: #444;
+  white-space: nowrap; /* Prevent wrapping */
 }
 
-.county-selector select {
-  width: 100%;
+/* County select styling */
+#county-select {
+  width: 120px; /* Shorter width */
   padding: 8px;
   border-radius: 4px;
   border: 1px solid #ccc;
-  height: 36px; /* Match button height */
+  height: 36px; /* Consistent height */
+  font-size: 13px;
 }
 
-/* Update fetch button styling to work in the new layout */
+/* Updated fetch button styling */
 button#fetch-btn {
-  flex: 1; /* Take up remaining space */
-  margin-top: 22px; /* Align with the dropdown by offsetting the label height */
-  padding: 8px 12px;
-  height: 36px;
+  padding: 8px 15px;
+  height: 36px; /* Consistent height */
+  min-width: 90px; /* Enough for "Generate" */
   background-color: #0078D7;
   color: white;
   border: none;
@@ -211,14 +206,16 @@ button#fetch-btn:active {
 /* Focus states */
 .field-input:focus,
 .field-textarea:focus,
-.source-select:focus {
+.source-select:focus,
+#county-select:focus {
   outline: none;
   border-color: #0078D7;
   box-shadow: 0 0 0 2px rgba(0, 120, 215, 0.2);
 }
 
 /* Source select hover effect */
-.source-select:hover {
+.source-select:hover,
+#county-select:hover {
   background-color: #e9ecef;
 }
 
@@ -377,35 +374,20 @@ footer a.disabled {
     max-width: none;
     font-size: 12px;
   }
-  
-  /* Adjust the top controls for mobile */
-  .top-controls-container {
-    flex-direction: column;
-  }
-  
-  .county-selector {
-    width: 100%;
-  }
-  
-  button#fetch-btn {
-    width: 100%;
-    margin-top: 10px;
-  }
 }
 
 /* Smaller screen adjustments */
 @media (max-width: 480px) {
   .top-controls-container {
-    flex-direction: column;
+    flex-wrap: wrap; /* Allow wrapping on very small screens */
   }
   
-  .county-selector {
-    width: 100%;
+  #county-select {
+    flex-grow: 1; /* Expand to available width */
   }
   
   button#fetch-btn {
-    width: 100%;
-    margin-top: 10px;
+    flex-grow: 1; /* Expand to available width */
   }
 }
 
