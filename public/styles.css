@@ -44,39 +44,51 @@ body {
   font-size: 16px;
 }
 
-/* County Selector styles */
-.county-selector {
-  margin: 10px 0 15px 0;
+/* New layout for county selector and fetch button */
+.top-controls-container {
   display: flex;
-  align-items: center;
   gap: 10px;
+  margin: 10px 0 20px 0;
+  align-items: flex-start;
+}
+
+/* Update county selector styling */
+.county-selector {
+  display: flex;
+  flex-direction: column;
+  width: 140px; /* Make it shorter */
 }
 
 .county-selector label {
-  font-weight: bold;
+  font-weight: 600;
+  margin-bottom: 4px;
+  font-size: 13px;
+  color: #444;
 }
 
 .county-selector select {
-  flex-grow: 1;
+  width: 100%;
   padding: 8px;
   border-radius: 4px;
   border: 1px solid #ccc;
+  height: 36px; /* Match button height */
 }
 
-/* Fetch button styling */
+/* Update fetch button styling to work in the new layout */
 button#fetch-btn {
-  margin-top: 10px;
-  margin-bottom: 20px;
-  width: 100%;
-  padding: 12px;
+  flex: 1; /* Take up remaining space */
+  margin-top: 22px; /* Align with the dropdown by offsetting the label height */
+  padding: 8px 12px;
+  height: 36px;
   background-color: #0078D7;
   color: white;
   border: none;
-  border-radius: 6px;
+  border-radius: 4px;
   cursor: pointer;
   font-weight: 600;
-  font-size: 16px;
+  font-size: 14px;
   transition: background-color 0.2s ease;
+  white-space: nowrap; /* Prevent text wrapping */
 }
 
 button#fetch-btn:hover {
@@ -365,6 +377,36 @@ footer a.disabled {
     max-width: none;
     font-size: 12px;
   }
+  
+  /* Adjust the top controls for mobile */
+  .top-controls-container {
+    flex-direction: column;
+  }
+  
+  .county-selector {
+    width: 100%;
+  }
+  
+  button#fetch-btn {
+    width: 100%;
+    margin-top: 10px;
+  }
+}
+
+/* Smaller screen adjustments */
+@media (max-width: 480px) {
+  .top-controls-container {
+    flex-direction: column;
+  }
+  
+  .county-selector {
+    width: 100%;
+  }
+  
+  button#fetch-btn {
+    width: 100%;
+    margin-top: 10px;
+  }
 }
 
 /* Scrollbar styling */
@@ -483,6 +525,7 @@ footer a.disabled {
   font-size: 10px;
 }
 
+/* Property image section styles */
 .property-image-section {
   margin-bottom: 20px;
   border: 1px solid #ddd;
