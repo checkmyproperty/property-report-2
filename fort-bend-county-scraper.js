@@ -6,11 +6,15 @@ class FortBendCountyScraper {
     this.session = axios.create({
       timeout: 15000,
       headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
-        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
         'Accept-Language': 'en-US,en;q=0.5',
-        'Cache-Control': 'no-cache'
-      }
+        'Accept-Encoding': 'gzip, deflate, br',
+        'Connection': 'keep-alive',
+        'Upgrade-Insecure-Requests': '1',
+        'Cache-Control': 'max-age=0'
+      },
+      maxRedirects: 5
     });
     
     this.lastRequest = 0;
@@ -30,27 +34,27 @@ class FortBendCountyScraper {
     this.lastRequest = Date.now();
   }
 
-  // Fort Bend County Appraisal District (FBCAD) search
+  // Main entry point method - Fort Bend County Appraisal District search
   async searchProperty(address) {
-    await this.delay();
-    
     try {
       console.log('Searching Fort Bend County for:', address);
       
-      // Option 1: Try FBCAD property search
-      let result = await this.searchFBCAD(address);
-      if (result && !result.error) {
-        return result;
+      if (!FortBendCountyScraper.isInFortBendCounty(address)) {
+        return { error: 'Address does not appear to be in Fort Bend County, Texas' };
       }
       
-      // Option 2: Try Fort Bend County Clerk records
-      result = await this.searchClerkRecords(address);
+      await this.delay();
+      
+      // Search using the FBCAD search page
+      const result = await this.searchFBCAD(address);
+      
       if (result && !result.error) {
         return result;
+      } else {
+        console.log('FBCAD search failed, trying alternative methods...');
+        // Could add alternative search methods here if needed
+        return result; // Return the error from quick search for now
       }
-      
-      // If both fail, return the error from FBCAD (most detailed)
-      return result || { error: 'No Fort Bend County property data found' };
       
     } catch (error) {
       console.error('Fort Bend County search error:', error.message);
@@ -58,83 +62,73 @@ class FortBendCountyScraper {
     }
   }
 
-  async searchFBCAD(address) {
+  async searchFBCAD(searchQuery) {
     try {
-      console.log('Attempting to access Fort Bend County (FBCAD) data...');
+      // The base search URL for FBCAD
+      const searchUrl = 'https://esearch.fbcad.org/Search/Result';
       
-      // Fort Bend County websites often have server issues (500 errors)
-      // We'll try a few different approaches with better error handling
+      console.log('🔍 Accessing FBCAD search...');
       
-      const searchUrls = [
-        'https://fbcad.org/property-search/',
-        'https://www.fbcad.org/property-search/',
-        'https://fbcad.org/',
-        'https://www.fbcad.org/'
-      ];
+      // Make the search request
+      await this.delay();
+      const response = await this.session.get(`${searchUrl}?keywords=${encodeURIComponent(searchQuery)}`);
       
-      for (const searchUrl of searchUrls) {
-        try {
-          console.log(`Trying FBCAD URL: ${searchUrl}`);
-          await this.delay();
-          
-          // Add more headers to appear like a regular browser
-          const response = await this.session.get(searchUrl, {
-            headers: {
-              ...this.session.defaults.headers,
-              'Sec-Fetch-Site': 'none',
-              'Sec-Fetch-Mode': 'navigate',
-              'Sec-Fetch-User': '?1',
-              'Sec-Fetch-Dest': 'document'
-            },
-            timeout: 10000 // Reduce timeout for faster failover
-          });
-          
-          if (response.status === 200) {
-            console.log('✅ Successfully connected to FBCAD');
-            
-            // Try to parse the response for search capabilities
-            const $ = cheerio.load(response.data);
-            
-            // Look for any search functionality
-            const searchElements = $('form, input[type="search"], input[name*="search"], input[name*="address"]');
-            
-            if (searchElements.length > 0) {
-              console.log('Found search elements, attempting property lookup...');
-              
-              // Try to perform search (this may still fail with 500)
-              const result = await this.attemptPropertySearch($, searchUrl, address);
-              if (result && !result.error) {
-                return result;
-              }
-            }
-            
-            // If we get here, the website is accessible but search failed
-            console.log('Website accessible but search functionality unavailable');
-            break;
-          }
-          
-        } catch (error) {
-          console.log(`URL ${searchUrl} failed: ${error.response?.status} ${error.message}`);
-          
-          // If we get a 500 error, it means the server is having issues
-          if (error.response?.status === 500) {
-            console.log('⚠️  Fort Bend County website experiencing server errors (HTTP 500)');
-            return { 
-              error: 'Fort Bend County website experiencing server errors (HTTP 500)',
-              statusMessage: 'County website is temporarily unavailable' 
-            };
-          }
-          
-          // Continue trying other URLs for other types of errors
-          continue;
-        }
+      if (response.status !== 200) {
+        console.log(`❌ Cannot access FBCAD search: ${response.status}`);
+        return { error: 'FBCAD search page not accessible' };
       }
       
-      // All attempts failed - return an error
-      return { 
-        error: 'Fort Bend County website is not accessible',
-        statusMessage: 'Unable to connect to FBCAD property search system'
-      };
+      console.log('✅ Successfully loaded FBCAD search results');
+      
+      // Parse search results to find property links
+      const $ = cheerio.load(response.data);
+      
+      // Look for property result items
+      const propertyResults = $('.search-results-property, .property-card, .search-result-item');
+      
+      if (propertyResults.length === 0) {
+        console.log('❌ No property results found');
+        
+        // Check if there's an error message
+        const errorMsg = $('.alert-danger, .error-message').text().trim();
+        if (errorMsg) {
+          return { error: `FBCAD search error: ${errorMsg}` };
+        }
+        
+        return { error: 'No property results found' };
+      }
+      
+      console.log(`✅ Found ${propertyResults.length} potential property results`);
+      
+      // Get the first property link
+      const propertyLink = propertyResults.first().find('a[href*="Property/"], a[href*="Detail/"]').first();
+      
+      if (!propertyLink.length) {
+        console.log('❌ No property detail links found in search results');
+        
+        // Try to extract some basic info from the search results
+        return this.extractFromSearchResults($, propertyResults.first());
+      }
+      
+      const detailUrl = propertyLink.attr('href');
+      const fullDetailUrl = detailUrl.startsWith('http') ? detailUrl : new URL(detailUrl, 'https://esearch.fbcad.org').href;
+      
+      console.log(`🔍 Following property link: ${fullDetailUrl}`);
+      
+      // Navigate to the detail page
+      await this.delay();
+      const detailResponse = await this.session.get(fullDetailUrl);
+      
+      if (detailResponse.status !== 200) {
+        console.log(`❌ Property detail page error: ${detailResponse.status}`);
+        return { 
+          error: `Property detail page error: ${detailResponse.status}`,
+          url: fullDetailUrl
+        };
+      }
+      
+      // Parse the property detail page
+      return this.parsePropertyDetailPage(detailResponse.data, fullDetailUrl);
       
     } catch (error) {
       console.error('FBCAD search error:', error.message);
@@ -142,316 +136,330 @@ class FortBendCountyScraper {
     }
   }
 
-  async attemptPropertySearch($, baseUrl, address) {
+  // Extract basic info from search results if we can't get to the detail page
+  extractFromSearchResults($, resultElement) {
     try {
-      // Look for search forms
-      const searchForm = $('form').first();
-      if (!searchForm.length) {
-        return { error: 'No search form found' };
+      const data = {
+        source: 'Fort Bend County Appraisal District',
+        partialData: true
+      };
+      
+      // Try to extract account number
+      const accountText = resultElement.text();
+      const accountMatch = accountText.match(/Account #:?\s*(\d+)/i) || accountText.match(/Property ID:?\s*(\d+)/i);
+      if (accountMatch) {
+        data.accountNumber = accountMatch[1];
       }
       
-      // Extract form details
-      const action = searchForm.attr('action') || baseUrl;
-      const method = (searchForm.attr('method') || 'GET').toUpperCase();
+      // Try to extract address
+      const addressElement = resultElement.find('.address, .property-address, [data-label="Address"]');
+      if (addressElement.length) {
+        data.propertyAddress = addressElement.text().trim();
+      }
       
-      // Build form data
-      const formData = new URLSearchParams();
+      // Try to extract owner name
+      const ownerElement = resultElement.find('.owner, .owner-name, [data-label="Owner"]');
+      if (ownerElement.length) {
+        data.owner = ownerElement.text().trim();
+      }
       
-      // Add any hidden inputs
-      searchForm.find('input[type="hidden"]').each((i, input) => {
-        const name = $(input).attr('name');
-        const value = $(input).attr('value');
-        if (name && value) {
-          formData.append(name, value);
-        }
-      });
+      return data;
+    } catch (error) {
+      console.error('Error extracting from search results:', error.message);
+      return { error: 'Failed to extract data from search results' };
+    }
+  }
+
+  // Parse the property detail page
+  async parsePropertyDetailPage(html, url) {
+    try {
+      const $ = cheerio.load(html);
       
-      // Try common field names for address search
-      const addressFields = [
-        'address', 'search', 'searchValue', 'query', 
-        'propertyAddress', 'streetAddress', 'searchText'
-      ];
+      const data = {
+        source: 'Fort Bend County Appraisal District',
+        url: url
+      };
       
-      let addressFieldFound = false;
+      // Extract account number if available
+      const accountText = $('body').text();
+      const accountMatch = accountText.match(/Account #:?\s*(\d+)/i) || 
+                         accountText.match(/Property ID:?\s*(\d+)/i) ||
+                         accountText.match(/R\d{5,}/i);
+      if (accountMatch) {
+        data.accountNumber = accountMatch[0].replace(/[^\d]/g, '');
+        console.log(`✅ Found Account Number: ${data.accountNumber}`);
+      }
       
-      // Check existing form fields
-      searchForm.find('input[type="text"], input[type="search"]').each((i, input) => {
-        const name = $(input).attr('name') || '';
-        const id = $(input).attr('id') || '';
-        
-        if (addressFields.some(field => 
-          name.toLowerCase().includes(field.toLowerCase()) || 
-          id.toLowerCase().includes(field.toLowerCase())
-        )) {
-          formData.append(name, address);
-          addressFieldFound = true;
-        }
-      });
+      // Extract property details from sections and tables
+      console.log('🔍 Extracting property details...');
       
-      // If no address field found, add common ones
-      if (!addressFieldFound) {
-        addressFields.forEach(field => {
-          formData.append(field, address);
+      // Function to clean extracted text
+      const cleanText = (text) => text.replace(/\s+/g, ' ').trim();
+      
+      // Extract from property sections
+      this.extractFromPropertySections($, data);
+      
+      // Extract from tables
+      this.extractFromTables($, data);
+      
+      // Extract from labeled fields
+      this.extractFromLabeledFields($, data);
+      
+      // Extract owner information
+      this.extractOwnerInfo($, data);
+      
+      // Extract value information
+      this.extractValueInfo($, data);
+      
+      // Add some additional formatting for certain fields
+      if (data.bedrooms) data.bedrooms = data.bedrooms.replace(/[^\d.]/g, '');
+      if (data.bathrooms) data.bathrooms = data.bathrooms.replace(/[^\d.]/g, '');
+      if (data.livingArea) data.livingArea = data.livingArea.replace(/[^\d.]/g, '');
+      if (data.lotSize) data.lotSize = data.lotSize.replace(/[^\d.]/g, '');
+      if (data.yearBuilt) data.yearBuilt = data.yearBuilt.replace(/[^\d]/g, '');
+      
+      if (data.assessedValue) data.assessedValue = data.assessedValue.replace(/[$,]/g, '');
+      if (data.landValue) data.landValue = data.landValue.replace(/[$,]/g, '');
+      if (data.improvementValue) data.improvementValue = data.improvementValue.replace(/[$,]/g, '');
+      
+      // Check if we got meaningful data
+      const hasData = Object.keys(data).length > 3; // More than just source, url, and account
+      
+      if (hasData) {
+        console.log('✅ Successfully extracted property details');
+        return data;
+      } else {
+        console.log('⚠️ Limited property data extracted');
+        return { 
+          error: 'Property found but data extraction incomplete',
+          partialData: data
+        };
+      }
+      
+    } catch (error) {
+      console.error('Error parsing property detail page:', error.message);
+      return { error: `Detail page parsing failed: ${error.message}` };
+    }
+  }
+
+  // Extract from property information sections
+  extractFromPropertySections($, data) {
+    // Look for sections with headers
+    $('.card, .panel, .section, .property-section').each((i, section) => {
+      const $section = $(section);
+      const headerText = $section.find('.card-header, .panel-heading, .section-header, h2, h3, h4').text().trim().toLowerCase();
+      
+      if (headerText.includes('building') || headerText.includes('improvement') || headerText.includes('structure')) {
+        // Extract building info
+        $section.find('tr, .row, .detail-row').each((j, row) => {
+          const $row = $(row);
+          const label = $row.find('th, .label, .detail-label').text().trim().toLowerCase();
+          const value = $row.find('td, .value, .detail-value').text().trim();
+          
+          if (label.includes('bed')) data.bedrooms = value;
+          if (label.includes('bath')) data.bathrooms = value;
+          if (label.match(/living area|sq\s*ft|square feet/)) data.livingArea = value;
+          if (label.includes('year built')) data.yearBuilt = value;
+          if (label.match(/stories|floor/)) data.stories = value;
+          if (label.includes('quality')) data.quality = value;
+          if (label.includes('condition')) data.condition = value;
+          if (label.includes('style') || label.includes('type')) data.propertyType = value;
+        });
+      } else if (headerText.includes('land') || headerText.includes('lot')) {
+        // Extract land info
+        $section.find('tr, .row, .detail-row').each((j, row) => {
+          const $row = $(row);
+          const label = $row.find('th, .label, .detail-label').text().trim().toLowerCase();
+          const value = $row.find('td, .value, .detail-value').text().trim();
+          
+          if (label.match(/area|sq\s*ft|acreage|square feet|lot size/)) data.lotSize = value;
+          if (label.includes('type')) data.lotType = value;
+          if (label.includes('dimension')) data.lotDimensions = value;
+        });
+      } else if (headerText.includes('value') || headerText.includes('assessment')) {
+        // Extract value info
+        $section.find('tr, .row, .detail-row').each((j, row) => {
+          const $row = $(row);
+          const label = $row.find('th, .label, .detail-label').text().trim().toLowerCase();
+          const value = $row.find('td, .value, .detail-value').text().trim();
+          
+          if (label.match(/total|assessed/)) data.assessedValue = value;
+          if (label.includes('land value')) data.landValue = value;
+          if (label.match(/improvement|building/)) data.improvementValue = value;
+          if (label.includes('tax') && label.includes('amount')) data.taxAmount = value;
+          if (label.includes('market')) data.marketValue = value;
         });
       }
-      
-      // Build full URL
-      const searchUrl = action.startsWith('http') ? action : new URL(action, baseUrl).href;
-      
-      console.log(`Submitting search for: ${address}`);
-      await this.delay();
-      
-      // Perform the search
-      let response;
-      try {
-        if (method === 'POST') {
-          response = await this.session.post(searchUrl, formData, {
-            headers: {
-              'Content-Type': 'application/x-www-form-urlencoded',
-              'Referer': baseUrl
-            },
-            timeout: 15000
-          });
-        } else {
-          response = await this.session.get(searchUrl, { 
-            params: Object.fromEntries(formData),
-            timeout: 15000
-          });
-        }
-        
-        if (response.status === 200) {
-          return this.extractFBCADPropertyData(cheerio.load(response.data));
-        }
-        
-      } catch (searchError) {
-        if (searchError.response?.status === 500) {
-          console.log('⚠️  Search resulted in server error (500) - Fort Bend County systems may be down');
-          return { 
-            error: 'Fort Bend County website experiencing technical difficulties',
-            suggestion: 'County website is temporarily unavailable'
-          };
-        }
-        throw searchError;
-      }
-      
-      return { error: 'Search completed but no data found' };
-      
-    } catch (error) {
-      console.error('Property search attempt failed:', error.message);
-      return { error: `Property search failed: ${error.message}` };
-    }
+    });
   }
 
-  async submitSearch($, form, baseUrl, address) {
-    try {
-      // Extract form data
-      const actionUrl = form.attr('action') || baseUrl;
-      const method = form.attr('method') || 'GET';
+  // Extract from tables
+  extractFromTables($, data) {
+    $('table').each((i, table) => {
+      const $table = $(table);
+      const caption = $table.find('caption').text().trim().toLowerCase();
       
-      const formData = {};
-      form.find('input, select, textarea').each((i, element) => {
-        const $el = $(element);
-        const name = $el.attr('name');
-        const type = $el.attr('type');
-        
-        if (name) {
-          if (type === 'hidden') {
-            formData[name] = $el.attr('value') || '';
-          } else if ($el.is('select')) {
-            formData[name] = $el.find('option:first').attr('value') || '';
-          } else {
-            // Assume this is the address field
-            formData[name] = address;
-          }
-        }
-      });
+      // Skip tables that don't look like data tables
+      if ($table.find('tr').length < 2) return;
       
-      // Common field names to try for address
-      const addressFields = ['address', 'search', 'query', 'searchValue', 'propertyAddress'];
-      addressFields.forEach(field => {
-        if (!formData[field]) {
-          formData[field] = address;
-        }
-      });
-      
-      await this.delay();
-      
-      let response;
-      const fullActionUrl = actionUrl.startsWith('http') ? actionUrl : new URL(actionUrl, baseUrl).href;
-      
-      if (method.toLowerCase() === 'post') {
-        response = await this.session.post(fullActionUrl, formData);
-      } else {
-        response = await this.session.get(fullActionUrl, { params: formData });
-      }
-      
-      if (response.status === 200) {
-        return this.extractFBCADPropertyData(cheerio.load(response.data));
-      }
-      
-      return { error: 'Search form submission failed' };
-      
-    } catch (error) {
-      console.error('Form submission error:', error.message);
-      return { error: `Form submission failed: ${error.message}` };
-    }
-  }
-
-  extractFBCADPropertyData($) {
-    try {
-      // Extract property details from FBCAD page
-      const extractText = (selector) => {
-        const element = $(selector).first();
-        return element.length ? element.text().trim() : null;
-      };
-      
-      const extractNumber = (text) => {
-        if (!text) return null;
-        const number = text.replace(/[^\d.-]/g, '');
-        return number ? parseFloat(number) : null;
-      };
-      
-      // FBCAD specific selectors - adjust based on actual HTML structure
-      const data = {
-        // Property basics
-        propertyType: extractText('.property-type') || extractText('[data-field="property-type"]'),
-        yearBuilt: extractNumber(extractText('.year-built') || extractText('[data-field="year-built"]')),
-        
-        // Building details
-        livingArea: extractNumber(extractText('.living-area') || extractText('[data-field="living-area"]')),
-        bedrooms: extractNumber(extractText('.bedrooms') || extractText('[data-field="bedrooms"]')),
-        bathrooms: extractNumber(extractText('.bathrooms') || extractText('[data-field="bathrooms"]')),
-        totalRooms: extractNumber(extractText('.total-rooms') || extractText('[data-field="total-rooms"]')),
-        
-        // Lot information
-        lotSize: extractNumber(extractText('.lot-size') || extractText('[data-field="lot-size"]')),
-        
-        // Assessment values
-        assessedValue: extractNumber(extractText('.assessed-value') || extractText('[data-field="assessed-value"]')),
-        landValue: extractNumber(extractText('.land-value') || extractText('[data-field="land-value"]')),
-        improvementValue: extractNumber(extractText('.improvement-value') || extractText('[data-field="improvement-value"]')),
-        
-        // Tax information
-        taxAmount: extractNumber(extractText('.tax-amount') || extractText('[data-field="tax-amount"]')),
-        
-        // Owner information
-        owner: extractText('.owner-name') || extractText('[data-field="owner-name"]'),
-        mailingAddress: extractText('.mailing-address') || extractText('[data-field="mailing-address"]'),
-        
-        // Additional details
-        constructionType: extractText('.construction-type') || extractText('[data-field="construction-type"]'),
-        garage: extractText('.garage') || extractText('[data-field="garage"]'),
-        parkingSpaces: extractNumber(extractText('.parking-spaces') || extractText('[data-field="parking-spaces"]')),
-        
-        // Source identifier
-        source: 'Fort Bend County Appraisal District'
-      };
-      
-      // Alternative extraction using table rows (common FBCAD format)
-      $('tr').each((i, row) => {
+      $table.find('tr').each((j, row) => {
         const $row = $(row);
-        const cells = $row.find('td');
+        const cells = $row.find('td, th');
         
         if (cells.length >= 2) {
-          const label = $(cells[0]).text().toLowerCase().trim();
+          const label = $(cells[0]).text().trim().toLowerCase();
           const value = $(cells[1]).text().trim();
           
-          if (label.includes('year built') || label.includes('year constructed')) {
-            data.yearBuilt = extractNumber(value);
-          }
-          if (label.includes('living area') || label.includes('heated area') || label.includes('square feet')) {
-            data.livingArea = extractNumber(value);
-          }
-          if (label.includes('bedrooms') || label.includes('beds')) {
-            data.bedrooms = extractNumber(value);
-          }
-          if (label.includes('bathrooms') || label.includes('baths')) {
-            data.bathrooms = extractNumber(value);
-          }
-          if (label.includes('lot size') || label.includes('land area') || label.includes('acres')) {
-            data.lotSize = extractNumber(value);
-          }
-          if (label.includes('assessed value') || label.includes('total value') || label.includes('market value')) {
-            data.assessedValue = extractNumber(value);
-          }
-          if (label.includes('land value')) {
-            data.landValue = extractNumber(value);
-          }
-          if (label.includes('improvement value') || label.includes('building value')) {
-            data.improvementValue = extractNumber(value);
-          }
-          if (label.includes('owner') || label.includes('taxpayer')) {
-            data.owner = value;
-          }
-          if (label.includes('mailing') || label.includes('address')) {
-            data.mailingAddress = value;
-          }
-          if (label.includes('construction') || label.includes('building type')) {
-            data.constructionType = value;
-          }
+          // Property details
+          if (label.includes('bedroom')) data.bedrooms = value;
+          if (label.includes('bathroom')) data.bathrooms = value;
+          if (label.match(/living area|sq\s*ft|square feet/)) data.livingArea = value;
+          if (label.includes('year built')) data.yearBuilt = value;
+          if (label.match(/lot size|land area/)) data.lotSize = value;
+          
+          // Value information
+          if (label.match(/total value|assessed/)) data.assessedValue = value;
+          if (label.includes('land value')) data.landValue = value;
+          if (label.match(/improvement|building value/)) data.improvementValue = value;
+          
+          // Owner information
+          if (label.includes('owner name')) data.owner = value;
+          if (label.includes('mailing address')) data.mailingAddress = value;
         }
       });
+    });
+  }
+
+  // Extract from labeled fields
+  extractFromLabeledFields($, data) {
+    // Look for label + value pairs
+    $('.detail-row, .property-field, .field-group').each((i, field) => {
+      const $field = $(field);
+      const label = $field.find('.detail-label, .field-label, .label').text().trim().toLowerCase();
+      const value = $field.find('.detail-value, .field-value, .value').text().trim();
       
-      // Try to extract from definition lists (dl/dt/dd structure)
-      $('dt').each((i, dt) => {
-        const label = $(dt).text().toLowerCase().trim();
-        const value = $(dt).next('dd').text().trim();
+      if (!label || !value) return;
+      
+      // Property details
+      if (label.includes('bedroom')) data.bedrooms = value;
+      if (label.includes('bathroom')) data.bathrooms = value;
+      if (label.match(/living area|sq\s*ft|square feet/)) data.livingArea = value;
+      if (label.includes('year built')) data.yearBuilt = value;
+      if (label.match(/lot size|land area/)) data.lotSize = value;
+      
+      // Value information
+      if (label.match(/total value|assessed/)) data.assessedValue = value;
+      if (label.includes('land value')) data.landValue = value;
+      if (label.match(/improvement|building value/)) data.improvementValue = value;
+      
+      // Owner information
+      if (label.includes('owner name')) data.owner = value;
+      if (label.includes('mailing address')) data.mailingAddress = value;
+    });
+  }
+
+  // Extract owner information
+  extractOwnerInfo($, data) {
+    // Look for owner section
+    const ownerSection = $('.owner-info, .owner-section, section:contains("Owner")');
+    if (ownerSection.length) {
+      const ownerText = ownerSection.text();
+      
+      // Extract owner name
+      const ownerNameMatch = ownerText.match(/Owner(?:\s*Name)?:?\s*([^,\n]+)/i);
+      if (ownerNameMatch) {
+        data.owner = ownerNameMatch[1].trim();
+      }
+      
+      // Extract mailing address
+      const mailingAddressMatch = ownerText.match(/Mailing\s*Address:?\s*([^\n]+)/i);
+      if (mailingAddressMatch) {
+        data.mailingAddress = mailingAddressMatch[1].trim();
+      }
+    }
+    
+    // If still not found, try more general search
+    if (!data.owner) {
+      // Look for elements containing "Owner" text
+      $('*:contains("Owner")').each((i, el) => {
+        const $el = $(el);
+        const elText = $el.text().trim();
         
-        if (label.includes('year built')) data.yearBuilt = extractNumber(value);
-        if (label.includes('living area')) data.livingArea = extractNumber(value);
-        if (label.includes('bedrooms')) data.bedrooms = extractNumber(value);
-        if (label.includes('bathrooms')) data.bathrooms = extractNumber(value);
-        if (label.includes('lot size')) data.lotSize = extractNumber(value);
-        if (label.includes('assessed value')) data.assessedValue = extractNumber(value);
-        if (label.includes('owner')) data.owner = value;
-      });
-      
-      // Clean up and validate data
-      Object.keys(data).forEach(key => {
-        if (data[key] === '' || data[key] === null || data[key] === undefined) {
-          data[key] = null;
+        // Skip elements with too much text
+        if (elText.length > 200) return;
+        
+        const ownerMatch = elText.match(/Owner(?:\s*Name)?:?\s*([^,\n]+)/i);
+        if (ownerMatch) {
+          data.owner = ownerMatch[1].trim();
         }
       });
-      
-      // Check if we got any meaningful data
-      const hasData = data.assessedValue || data.yearBuilt || data.livingArea || data.owner;
-      
-      return hasData ? data : { error: 'No property data found in FBCAD page' };
-      
-    } catch (error) {
-      console.error('Error extracting FBCAD data:', error.message);
-      return { error: `Data extraction failed: ${error.message}` };
     }
   }
 
-  async searchClerkRecords(address) {
-    try {
-      // Fort Bend County Clerk real estate records search
-      // This is typically for deed records, sales, etc.
-      const clerkUrl = 'https://www.fortbendcountytx.gov/';
+  // Extract value information
+  extractValueInfo($, data) {
+    // Look for value section
+    const valueSection = $('.value-info, .assessment-section, section:contains("Value")');
+    if (valueSection.length) {
+      const valueText = valueSection.text();
       
-      // Implementation would depend on the actual clerk search interface
-      // For now, return a placeholder indicating this is not implemented
-      return { error: 'Fort Bend County Clerk search not yet implemented' };
+      // Extract various values
+      const assessedMatch = valueText.match(/(?:Total|Assessed)\s*Value:?\s*\$?([0-9,]+)/i);
+      if (assessedMatch) {
+        data.assessedValue = assessedMatch[1].trim();
+      }
       
-    } catch (error) {
-      console.error('Clerk records search error:', error.message);
-      return { error: `Clerk records search failed: ${error.message}` };
+      const landMatch = valueText.match(/Land\s*Value:?\s*\$?([0-9,]+)/i);
+      if (landMatch) {
+        data.landValue = landMatch[1].trim();
+      }
+      
+      const improvementMatch = valueText.match(/(?:Improvement|Building)\s*Value:?\s*\$?([0-9,]+)/i);
+      if (improvementMatch) {
+        data.improvementValue = improvementMatch[1].trim();
+      }
+    }
+    
+    // If still not found, look for tables with value information
+    if (!data.assessedValue) {
+      $('table, .table').each((i, table) => {
+        const $table = $(table);
+        const tableText = $table.text().toLowerCase();
+        
+        if (tableText.includes('value') || tableText.includes('assessed') || tableText.includes('appraisal')) {
+          $table.find('tr').each((j, row) => {
+            const cells = $(row).find('td, th');
+            if (cells.length < 2) return;
+            
+            const label = $(cells[0]).text().trim().toLowerCase();
+            const value = $(cells[1]).text().trim();
+            
+            if (label.match(/total|assessed/i)) data.assessedValue = value.replace(/[^0-9,]/g, '');
+            if (label.includes('land')) data.landValue = value.replace(/[^0-9,]/g, '');
+            if (label.match(/improvement|building/)) data.improvementValue = value.replace(/[^0-9,]/g, '');
+          });
+        }
+      });
     }
   }
 
   // Method to check if address is in Fort Bend County
   static isInFortBendCounty(address) {
-    const fortBendCountyCities = [
-      'sugar land', 'missouri city', 'pearland', 'rosenberg', 'richmond',
-      'stafford', 'katy', 'fulshear', 'needville', 'simonton', 'cinco ranch',
-      'first colony', 'sienna plantation', 'new territory', 'mission bend',
-      'fort bend county', 'fort bend'
+    const fortBendCities = [
+      'sugar land', 'missouri city', 'rosenberg', 'richmond', 'stafford', 
+      'katy', 'fulshear', 'needville', 'meadows place', 'arcola', 
+      'thompson', 'fresno', 'sienna', 'cinco ranch', 'fort bend',
+      'pearland'
     ];
     
     const lowerAddress = address.toLowerCase();
-    return fortBendCountyCities.some(city => lowerAddress.includes(city)) || 
-           (lowerAddress.includes('texas') || lowerAddress.includes('tx'));
+    return fortBendCities.some(city => lowerAddress.includes(city)) || 
+           lowerAddress.includes('fort bend') || 
+           // Fort Bend ZIP codes
+           /774\d{2}/.test(address) ||
+           /775\d{2}/.test(address) ||
+           lowerAddress.includes('ft bend') ||
+           lowerAddress.includes('tx');
   }
 }
 

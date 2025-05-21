@@ -406,8 +406,38 @@ function fetchHarrisCountyData(address) {
   const statusBox = document.getElementById('status-box');
   statusBox.textContent = `Fetching Harris County data for ${address}...`;
   
-  // Call your existing Harris County scraping code here
-  // This function should update storedData.county with results
+  // Make an API call to the backend to specifically fetch Harris County data
+  return fetch(`/fetch-county-data?address=${encodeURIComponent(address)}&county=harris`)
+    .then(response => {
+      if (!response.ok) {
+        throw new Error(`Harris County data fetch failed: ${response.status}`);
+      }
+      return response.json();
+    })
+    .then(data => {
+      console.log('Harris County data received:', data);
+      
+      // Update the global storedData.county with the results
+      storedData.county = data;
+      
+      // Update status
+      if (data.error) {
+        statusBox.innerHTML = `<span style="color:orange;">Harris County data: ${data.error}</span>`;
+      } else {
+        statusBox.innerHTML = `<span style="color:green;">Harris County data successfully retrieved</span>`;
+      }
+      
+      return data;
+    })
+    .catch(error => {
+      console.error('Harris County fetch error:', error);
+      statusBox.innerHTML = `<span style="color:red;">Harris County error: ${error.message}</span>`;
+      
+      // Set error in stored data
+      storedData.county = { error: error.message };
+      
+      return { error: error.message };
+    });
 }
 
 function fetchFortBendCountyData(address) {
@@ -415,8 +445,38 @@ function fetchFortBendCountyData(address) {
   const statusBox = document.getElementById('status-box');
   statusBox.textContent = `Fetching Fort Bend County data for ${address}...`;
   
-  // Call your existing Fort Bend County scraping code here
-  // This function should update storedData.county with results
+  // Make an API call to the backend to specifically fetch Fort Bend County data
+  return fetch(`/fetch-county-data?address=${encodeURIComponent(address)}&county=fortbend`)
+    .then(response => {
+      if (!response.ok) {
+        throw new Error(`Fort Bend County data fetch failed: ${response.status}`);
+      }
+      return response.json();
+    })
+    .then(data => {
+      console.log('Fort Bend County data received:', data);
+      
+      // Update the global storedData.county with the results
+      storedData.county = data;
+      
+      // Update status
+      if (data.error) {
+        statusBox.innerHTML = `<span style="color:orange;">Fort Bend County data: ${data.error}</span>`;
+      } else {
+        statusBox.innerHTML = `<span style="color:green;">Fort Bend County data successfully retrieved</span>`;
+      }
+      
+      return data;
+    })
+    .catch(error => {
+      console.error('Fort Bend County fetch error:', error);
+      statusBox.innerHTML = `<span style="color:red;">Fort Bend County error: ${error.message}</span>`;
+      
+      // Set error in stored data
+      storedData.county = { error: error.message };
+      
+      return { error: error.message };
+    });
 }
 
 // Main fetch handler - ATTOM + County only

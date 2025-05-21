@@ -13,7 +13,8 @@ class HarrisCountyScraper {
         'Connection': 'keep-alive',
         'Upgrade-Insecure-Requests': '1',
         'Cache-Control': 'max-age=0'
-      }
+      },
+      maxRedirects: 5
     });
     
     this.lastRequest = 0;
@@ -33,21 +34,31 @@ class HarrisCountyScraper {
     this.lastRequest = Date.now();
   }
 
-  // Harris County Appraisal District (HCAD) search - Updated with correct URL
+  // Main entry point method - Harris County Appraisal District search
   async searchProperty(address) {
-    await this.delay();
-    
     try {
       console.log('Searching Harris County for:', address);
       
-      // Use the correct HCAD Quick Search URL
+      if (!HarrisCountyScraper.isInHarrisCounty(address)) {
+        return { error: 'Address does not appear to be in Harris County, Texas' };
+      }
+      
+      await this.delay();
+      
+      // Use the HCAD Quick Search
       const result = await this.searchHCADQuickSearch(address);
+      
       if (result && !result.error) {
         return result;
+      } else {
+        console.log('Quick search failed, trying alternative methods...');
+        // Could add alternative search methods here if needed
+        return result; // Return the error from quick search for now
       }
       
     } catch (error) {
       console.error('Harris County search error:', error.message);
+      return { error: `Harris County search failed: ${error.message}` };
     }
   }
 
@@ -142,7 +153,7 @@ class HarrisCountyScraper {
       console.log('✅ Search submitted successfully');
       
       // Parse the results
-      return this.parseSearchResults(searchResponse.data);
+      return this.parseSearchResults(searchResponse.data, submitUrl);
       
     } catch (error) {
       console.error('HCAD Quick Search error:', error.message);
@@ -150,105 +161,288 @@ class HarrisCountyScraper {
     }
   }
 
-  async parseSearchResults(html) {
-  try {
-    const $ = cheerio.load(html);
-    
-    // Check if we got search results
-    const resultRows = $('table tr, .search-result, .property-result');
-    
-    if (resultRows.length === 0) {
-      return { error: 'No search results found' };
-    }
-    
-    // Look for the first property link to get detailed information
-    const propertyLink = $('a[href*="property"], a[href*="detail"]').first();
-    
-    if (propertyLink.length) {
-      const detailUrl = propertyLink.attr('href');
-      const fullDetailUrl = detailUrl.startsWith('http') ? detailUrl : new URL(detailUrl, 'https://hcad.org').href;
+  // Single implementation of parseSearchResults that handles both scenarios
+  async parseSearchResults(html, baseUrl = 'https://hcad.org') {
+    try {
+      const $ = cheerio.load(html);
       
-      console.log(`Following property link: ${fullDetailUrl}`);
+      // Check if we got search results
+      const resultRows = $('table tr, .search-result, .property-result');
       
-      // Navigate to detail page
-      await this.delay();
-      const detailResponse = await this.session.get(fullDetailUrl);
-      
-      if (detailResponse.status !== 200) {
-        return { error: `Property detail page error: ${detailResponse.status}` };
+      if (resultRows.length === 0) {
+        console.log('❌ No search results found');
+        return { error: 'No search results found' };
       }
       
-      // Extract property data from detail page
-      return this.parsePropertyDetailPage(detailResponse.data);
-    }
-    
-    // If no property link found, try to extract from current page as fallback
-    // (your existing fallback code)
-  } catch (error) {
-    console.error('Error parsing search results:', error.message);
-    return { error: `Results parsing failed: ${error.message}` };
-  }
-}
-
-// Add a new method to parse the property detail page
-async parsePropertyDetailPage(html) {
-  try {
-    const $ = cheerio.load(html);
-    const data = {
-      source: 'Harris County Appraisal District'
-    };
-    
-    // Extract property details
-    // HCAD usually has tables with property information
-    $('table').each((i, table) => {
-      const tableTitle = $(table).prev('h3, h4').text().trim();
+      console.log(`✅ Found ${resultRows.length} potential result rows`);
       
-      if (tableTitle.includes('Building')) {
-        // Extract building info (beds, baths, etc.)
-        $(table).find('tr').each((j, row) => {
-          const cells = $(row).find('td');
+      // Look for property detail links
+      const propertyLinks = $('a[href*="property"], a[href*="detail"], a[href*="account"]');
+      
+      if (propertyLinks.length > 0) {
+        console.log(`✅ Found ${propertyLinks.length} property links`);
+        
+        // Get the first property link
+        const firstPropertyLink = propertyLinks.first();
+        const detailUrl = firstPropertyLink.attr('href');
+        
+        // Ensure we have a full URL
+        const fullDetailUrl = detailUrl.startsWith('http') 
+          ? detailUrl 
+          : new URL(detailUrl, baseUrl).href;
+        
+        console.log(`🔍 Following property link: ${fullDetailUrl}`);
+        
+        // Navigate to the detail page
+        await this.delay();
+        const detailResponse = await this.session.get(fullDetailUrl);
+        
+        if (detailResponse.status !== 200) {
+          console.log(`❌ Property detail page error: ${detailResponse.status}`);
+          return { 
+            error: `Property detail page error: ${detailResponse.status}`,
+            url: fullDetailUrl
+          };
+        }
+        
+        // Extract property data from detail page
+        return this.parsePropertyDetailPage(detailResponse.data, fullDetailUrl);
+      }
+      
+      // Fallback: Try to extract data from the search results page
+      console.log('⚠️ No property detail links found. Attempting to extract data from search results.');
+      
+      const data = {
+        source: 'Harris County Appraisal District',
+        url: baseUrl
+      };
+      
+      // Extract from tables on the current page
+      $('table').each((i, table) => {
+        const $table = $(table);
+        
+        // Skip tables that don't look like data tables
+        if ($table.find('tr').length < 2) return;
+        
+        $table.find('tr').each((j, row) => {
+          const cells = $(row).find('td, th');
+          
           if (cells.length >= 2) {
+            const label = $(cells[0]).text().toLowerCase().trim();
+            const value = $(cells[1]).text().trim();
+            
+            this.parseFieldFromLabel(label, value, data);
+          }
+        });
+      });
+      
+      // Check if we got meaningful data
+      const hasData = Object.keys(data).length > 2; // More than just source and url
+      
+      if (hasData) {
+        console.log('✅ Successfully extracted property data from search results');
+        return data;
+      } else {
+        console.log('❌ Unable to extract property data');
+        return { 
+          error: 'Property found but data extraction not available',
+          suggestion: 'HCAD results require manual verification for detailed information',
+          url: baseUrl
+        };
+      }
+      
+    } catch (error) {
+      console.error('Error parsing search results:', error.message);
+      return { error: `Results parsing failed: ${error.message}` };
+    }
+  }
+
+  // Parse the property detail page
+  async parsePropertyDetailPage(html, url) {
+    try {
+      const $ = cheerio.load(html);
+      const data = {
+        source: 'Harris County Appraisal District',
+        url: url
+      };
+      
+      // Extract account number if available
+      const accountText = $('body').text();
+      const accountMatch = accountText.match(/Account\s*(?:Number|#|No\.?)?\s*[:=]?\s*(\d+)/i);
+      if (accountMatch) {
+        data.accountNumber = accountMatch[1];
+        console.log(`✅ Found Account Number: ${data.accountNumber}`);
+      }
+      
+      // Extract property details from tables
+      console.log('🔍 Extracting property details from tables...');
+      
+      // Look for table headers or titles
+      $('h1, h2, h3, h4, h5, h6, caption, th, .table-title, .section-header').each((i, header) => {
+        const headerText = $(header).text().trim();
+        const table = $(header).next('table');
+        
+        // If there's no table after this header, skip
+        if (table.length === 0) return;
+        
+        console.log(`   Processing table: "${headerText}"`);
+        
+        // Check for building info
+        if (headerText.match(/building|improvement|structure/i)) {
+          table.find('tr').each((j, row) => {
+            const cells = $(row).find('td');
+            if (cells.length < 2) return;
+            
             const label = $(cells[0]).text().trim().toLowerCase();
             const value = $(cells[1]).text().trim();
             
-            if (label.includes('bedroom')) data.bedrooms = value;
-            if (label.includes('bath')) data.bathrooms = value;
-            if (label.includes('area') || label.includes('sq ft')) data.livingArea = value.replace(/[^\d.]/g, '');
-            if (label.includes('year built')) data.yearBuilt = value;
-          }
-        });
-      }
-      
-      if (tableTitle.includes('Value') || tableTitle.includes('Assessment')) {
-        // Extract value information
-        $(table).find('tr').each((j, row) => {
-          const cells = $(row).find('td');
-          if (cells.length >= 2) {
+            if (label.match(/bedroom|bed\s+count/i)) data.bedrooms = value.replace(/[^\d.]/g, '');
+            if (label.match(/bathroom|bath\s+count/i)) data.bathrooms = value.replace(/[^\d.]/g, '');
+            if (label.match(/sq\s*ft|area|size/i)) data.livingArea = value.replace(/[^\d.]/g, '');
+            if (label.match(/year\s+built/i)) data.yearBuilt = value.replace(/[^\d]/g, '');
+            if (label.match(/style|type/i)) data.propertyType = value;
+            if (label.match(/stories|floors/i)) data.stories = value.replace(/[^\d.]/g, '');
+          });
+        }
+        
+        // Check for valuation/assessment
+        if (headerText.match(/value|assessment|appraisal/i)) {
+          table.find('tr').each((j, row) => {
+            const cells = $(row).find('td');
+            if (cells.length < 2) return;
+            
             const label = $(cells[0]).text().trim().toLowerCase();
             const value = $(cells[1]).text().trim().replace(/[$,]/g, '');
             
-            if (label.includes('assessed')) data.assessedValue = value;
-            if (label.includes('land value')) data.landValue = value;
-            if (label.includes('improvement')) data.improvementValue = value;
-            if (label.includes('tax')) data.taxAmount = value;
-          }
+            if (label.match(/assessed|total/i)) data.assessedValue = value;
+            if (label.match(/land/i)) data.landValue = value;
+            if (label.match(/improvement|building/i)) data.improvementValue = value;
+            if (label.match(/tax/i)) data.taxAmount = value;
+            if (label.match(/market/i)) data.marketValue = value;
+          });
+        }
+        
+        // Check for owner information
+        if (headerText.match(/owner|ownership/i)) {
+          table.find('tr').each((j, row) => {
+            const cells = $(row).find('td');
+            if (cells.length < 2) return;
+            
+            const label = $(cells[0]).text().trim().toLowerCase();
+            const value = $(cells[1]).text().trim();
+            
+            if (label.match(/name/i)) data.owner = value;
+            if (label.match(/mail|mailing/i)) data.mailingAddress = value;
+          });
+        }
+        
+        // Check for property location information
+        if (headerText.match(/location|address|property/i)) {
+          table.find('tr').each((j, row) => {
+            const cells = $(row).find('td');
+            if (cells.length < 2) return;
+            
+            const label = $(cells[0]).text().trim().toLowerCase();
+            const value = $(cells[1]).text().trim();
+            
+            if (label.match(/address/i)) data.propertyAddress = value;
+            if (label.match(/legal|description/i)) data.legalDescription = value;
+            if (label.match(/neighborhood/i)) data.neighborhood = value;
+            if (label.match(/lot|block/i) && !data.legalDescription) data.legalDescription = value;
+          });
+        }
+      });
+      
+      // If the above didn't work, try a more generic approach
+      if (Object.keys(data).length <= 3) { // Just source, url, and maybe account number
+        console.log('⚠️ Table structure not recognized. Trying generic extraction...');
+        
+        // Extract any property details
+        $('table').each((i, table) => {
+          $(table).find('tr').each((j, row) => {
+            const cells = $(row).find('td');
+            if (cells.length < 2) return;
+            
+            const label = $(cells[0]).text().trim().toLowerCase();
+            const value = $(cells[1]).text().trim();
+            
+            this.parseFieldFromLabel(label, value, data);
+          });
         });
       }
-    });
-    
-    // Check if we got meaningful data
-    const hasData = Object.keys(data).length > 2; // More than just source and one field
-    
-    return hasData ? data : { 
-      error: 'Property found but data extraction incomplete',
-      partialData: data
-    };
-    
-  } catch (error) {
-    console.error('Error parsing property detail page:', error.message);
-    return { error: `Detail page parsing failed: ${error.message}` };
+      
+      // Extract any data from divs with labeled content
+      $('.property-info, .detail-section, .data-section').each((i, section) => {
+        const sectionText = $(section).text();
+        this.extractDataFromText(sectionText, data);
+      });
+      
+      // Check if we got meaningful data
+      const hasData = Object.keys(data).length > 3; // More than just source, url, and account
+      
+      if (hasData) {
+        console.log('✅ Successfully extracted property details');
+        return data;
+      } else {
+        console.log('⚠️ Limited property data extracted');
+        return { 
+          error: 'Property found but data extraction incomplete',
+          partialData: data
+        };
+      }
+      
+    } catch (error) {
+      console.error('Error parsing property detail page:', error.message);
+      return { error: `Detail page parsing failed: ${error.message}` };
+    }
   }
-}
+
+  // Helper method to extract data from general text blocks
+  extractDataFromText(text, data) {
+    const patterns = [
+      { regex: /(\d+)\s*bedroom/i, field: 'bedrooms', process: (v) => v },
+      { regex: /(\d+(?:\.\d+)?)\s*bath/i, field: 'bathrooms', process: (v) => v },
+      { regex: /(\d+(?:,\d+)?)\s*(?:sq\.?\s*ft\.?|square\s*feet)/i, field: 'livingArea', process: (v) => v.replace(/,/g, '') },
+      { regex: /built\s*(?:in)?\s*(\d{4})/i, field: 'yearBuilt', process: (v) => v },
+      { regex: /assessed\s*value\s*(?:of)?\s*\$?(\d+(?:,\d+)*(?:\.\d+)?)/i, field: 'assessedValue', process: (v) => v.replace(/,/g, '') },
+      { regex: /land\s*value\s*(?:of)?\s*\$?(\d+(?:,\d+)*(?:\.\d+)?)/i, field: 'landValue', process: (v) => v.replace(/,/g, '') }
+    ];
+    
+    patterns.forEach(pattern => {
+      const match = text.match(pattern.regex);
+      if (match && !data[pattern.field]) {
+        data[pattern.field] = pattern.process(match[1]);
+      }
+    });
+  }
+
+  // Helper method to standardize field parsing from labels
+  parseFieldFromLabel(label, value, data) {
+    // Property details
+    if (label.match(/bedroom|bed\s+count/i)) data.bedrooms = value.replace(/[^\d.]/g, '');
+    if (label.match(/bathroom|bath\s+count/i)) data.bathrooms = value.replace(/[^\d.]/g, '');
+    if (label.match(/sq\s*ft|area|size/i)) data.livingArea = value.replace(/[^\d.]/g, '');
+    if (label.match(/year\s+built/i)) data.yearBuilt = value.replace(/[^\d]/g, '');
+    if (label.match(/style|type/i)) data.propertyType = value;
+    
+    // Value information
+    if (label.match(/assessed|total\s+value/i)) data.assessedValue = value.replace(/[$,]/g, '');
+    if (label.match(/land\s+value/i)) data.landValue = value.replace(/[$,]/g, '');
+    if (label.match(/improvement|building\s+value/i)) data.improvementValue = value.replace(/[$,]/g, '');
+    if (label.match(/market\s+value/i)) data.marketValue = value.replace(/[$,]/g, '');
+    if (label.match(/tax\s+amount/i)) data.taxAmount = value.replace(/[$,]/g, '');
+    
+    // Legal information
+    if (label.match(/account\s*(?:number|#|no\.?)/i)) data.accountNumber = value.replace(/[^\d]/g, '');
+    if (label.match(/legal\s*description/i)) data.legalDescription = value;
+    if (label.match(/owner/i) && !label.includes('address')) data.owner = value;
+    if (label.match(/address/i) && !data.propertyAddress) data.propertyAddress = value;
+    
+    // Other info
+    if (label.match(/neighborhood/i)) data.neighborhood = value;
+    if (label.match(/block/i)) data.block = value;
+    if (label.match(/lot/i)) data.lot = value;
+  }
 
   parseAddress(address) {
     // Parse address into components for HCAD form
@@ -261,9 +455,13 @@ async parsePropertyDetailPage(html) {
     // Extract street name (everything after the number, before city)
     let streetName = '';
     if (streetNumber) {
-    const afterNumber = cleanAddress.substring(streetNumber.length).trim();
-    const commaIndex = afterNumber.indexOf(',');
-    streetName = commaIndex > 0 ? afterNumber.substring(0, commaIndex).trim() : afterNumber;
+      const afterNumber = cleanAddress.substring(streetNumber.length).trim();
+      const commaIndex = afterNumber.indexOf(',');
+      streetName = commaIndex > 0 ? afterNumber.substring(0, commaIndex).trim() : afterNumber;
+    } else {
+      // Handle case where there's no street number
+      const commaIndex = cleanAddress.indexOf(',');
+      streetName = commaIndex > 0 ? cleanAddress.substring(0, commaIndex).trim() : cleanAddress;
     }
 
     console.log(`Parsed address: Number=${streetNumber}, Name=${streetName}`);
@@ -273,124 +471,6 @@ async parsePropertyDetailPage(html) {
       streetName,
       fullAddress: cleanAddress
     };
-  }
-
-  parseSearchResults(html) {
-    try {
-      const $ = cheerio.load(html);
-      
-      // Check if we got search results
-      const resultRows = $('table tr, .search-result, .property-result');
-      
-      if (resultRows.length === 0) {
-        return { error: 'No search results found' };
-      }
-      
-      console.log(`Found ${resultRows.length} potential result rows`);
-      
-      // Try to extract property data from the results
-      const data = {
-        source: 'Harris County Appraisal District'
-      };
-      
-      // Look for property links to get detailed information
-      const propertyLinks = $('a[href*="property"], a[href*="detail"]');
-      
-      if (propertyLinks.length > 0) {
-        console.log(`Found ${propertyLinks.length} property links`);
-        // For now, we'll note that we found results but can't automatically extract details
-        data.note = 'Property found in HCAD search results - detailed extraction requires manual verification';
-        return data;
-      }
-      
-      // Try to extract basic information from the results page
-      $('table tr').each((i, row) => {
-        const $row = $(row);
-        const cells = $row.find('td');
-        
-        if (cells.length >= 2) {
-          const label = $(cells[0]).text().toLowerCase().trim();
-          const value = $(cells[1]).text().trim();
-          
-          this.parseFieldFromLabel(label, value, data);
-        }
-      });
-      
-      // Check if we got meaningful data
-      const hasData = Object.keys(data).length > 1; // More than just source
-      
-      if (hasData) {
-        data.searchSuccessful = true;
-        return data;
-      } else {
-        return { 
-          error: 'Property found but data extraction not available',
-          suggestion: 'HCAD results require manual verification for detailed property information'
-        };
-      }
-      
-    } catch (error) {
-      console.error('Error parsing HCAD search results:', error.message);
-      return { error: `Results parsing failed: ${error.message}` };
-    }
-  }
-
-  async performSearch(html, baseUrl, address) {
-    try {
-      const $ = cheerio.load(html);
-      
-      // Look for search forms
-      const searchForms = $('form');
-      console.log(`Found ${searchForms.length} forms on the page`);
-      
-      if (searchForms.length === 0) {
-        return { error: 'No search forms found on HCAD page' };
-      }
-      
-      // Try to find and submit the appropriate search form
-      for (let i = 0; i < searchForms.length; i++) {
-        const form = searchForms.eq(i);
-        const action = form.attr('action');
-        const inputs = form.find('input');
-        
-        console.log(`Form ${i + 1}: action="${action}", inputs=${inputs.length}`);
-        
-        // Look for address-related input fields
-        const addressInputs = inputs.filter((j, input) => {
-          const name = $(input).attr('name') || '';
-          const id = $(input).attr('id') || '';
-          const placeholder = $(input).attr('placeholder') || '';
-          
-          return ['address', 'street', 'property', 'search'].some(keyword =>
-            name.toLowerCase().includes(keyword) ||
-            id.toLowerCase().includes(keyword) ||
-            placeholder.toLowerCase().includes(keyword)
-          );
-        });
-        
-        if (addressInputs.length > 0) {
-          console.log(`Found ${addressInputs.length} address-related inputs in form ${i + 1}`);
-          break;
-        }
-      }
-      
-      
-    } catch (error) {
-      console.error('Error analyzing HCAD page:', error.message);
-      return { error: `Page analysis failed: ${error.message}` };
-    }
-  }
-
-  async searchClerkRecords(address) {
-    try {
-      // Harris County Clerk real estate records
-      console.log('Harris County Clerk search not yet implemented');
-      return { error: 'Harris County Clerk search not yet implemented' };
-      
-    } catch (error) {
-      console.error('Clerk records search error:', error.message);
-      return { error: `Clerk records search failed: ${error.message}` };
-    }
   }
 
   // Method to check if address is in Harris County

@@ -558,5 +558,67 @@ app.post('/downloadReport', async (req, res) => {
   }
 });
 
+app.get('/fetch-county-data', async (req, res) => {
+  const address = req.query.address;
+  const county = req.query.county;
+  
+  if (!address) {
+    return res.status(400).json({ error: 'Address is required' });
+  }
+  
+  try {
+    let countyData = { error: 'County not supported' };
+    
+    if (county === 'harris' && harrisCountyScraper) {
+      console.log('Fetching Harris County data for:', address);
+      countyData = await harrisCountyScraper.searchProperty(address);
+      countyData.county = 'Harris County';
+    } else if (county === 'fortbend' && fortBendCountyScraper) {
+      console.log('Fetching Fort Bend County data for:', address);
+      countyData = await fortBendCountyScraper.searchProperty(address);
+      countyData.county = 'Fort Bend County';
+    }
+    
+    res.json(countyData);
+  } catch (error) {
+    console.error(`Error fetching ${county} county data:`, error);
+    res.status(500).json({ 
+      error: `${county} county data fetch failed: ${error.message}`,
+      county: county
+    });
+  }
+});
+
+app.get('/fetch-county-data', async (req, res) => {
+  const address = req.query.address;
+  const county = req.query.county;
+  
+  if (!address) {
+    return res.status(400).json({ error: 'Address is required' });
+  }
+  
+  try {
+    let countyData = { error: 'County not supported' };
+    
+    if (county === 'harris' && harrisCountyScraper) {
+      console.log('Fetching Harris County data for:', address);
+      countyData = await harrisCountyScraper.searchProperty(address);
+      countyData.county = 'Harris County';
+    } else if (county === 'fortbend' && fortBendCountyScraper) {
+      console.log('Fetching Fort Bend County data for:', address);
+      countyData = await fortBendCountyScraper.searchProperty(address);
+      countyData.county = 'Fort Bend County';
+    }
+    
+    res.json(countyData);
+  } catch (error) {
+    console.error(`Error fetching ${county} county data:`, error);
+    res.status(500).json({ 
+      error: `${county} county data fetch failed: ${error.message}`,
+      county: county
+    });
+  }
+});
+
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => console.log(`Server listening on port ${PORT}`));
