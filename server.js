@@ -263,46 +263,6 @@ function generatePDFResponse(res, address, sources, currentValues, uploadedImage
   }
   doc.fillColor('black').moveDown();
   
-  // Add property image - First check for uploaded image, then ATTOM image
-if (uploadedImage && uploadedImage.dataUrl) {
-  // Use uploaded image if available
-  try {
-    doc.image(uploadedImage.dataUrl, {
-      fit: [400, 300],
-      align: 'center'
-    });
-    doc.fontSize(10).text('User Uploaded Property Image', { align: 'center' });
-    doc.moveDown();
-  } catch (error) {
-    console.error('Error adding uploaded image to PDF:', error.message);
-    doc.fontSize(10).text('Property image could not be loaded', { align: 'center' });
-    doc.moveDown();
-  }
-} else {
-  // Otherwise try to use ATTOM image
-  const imageUrl = attom?.property?.photo?.[0]?.url || 
-                  attom?.images?.[0]?.url || 
-                  attom?.photo?.url;
-  
-  if (imageUrl) {
-    try {
-      doc.image(imageUrl, {
-        fit: [400, 300],
-        align: 'center'
-      });
-      doc.fontSize(10).text('Property Image from ATTOM', { align: 'center' });
-      doc.moveDown();
-    } catch (error) {
-      console.error('Error adding ATTOM image to PDF:', error.message);
-      doc.fontSize(10).text('Property image could not be loaded', { align: 'center' });
-      doc.moveDown();
-    }
-  } else {
-    doc.fontSize(10).text('No property image available', { align: 'center' });
-    doc.moveDown();
-  }
-}
-
   // Property Details Section
   doc.fontSize(16).text('Property Details', { underline: true });
   doc.fontSize(12).fillColor('black')
@@ -403,6 +363,45 @@ if (uploadedImage && uploadedImage.dataUrl) {
     doc.fontSize(10).fillColor('gray');
     doc.text('Note: County property data was not available during report generation.');
     doc.text('Report uses ATTOM data and any manual entries provided.');
+  }
+  
+  // MOVED TO END: Add property image at the end of the report
+  doc.moveDown(2);
+  doc.fillColor('black').fontSize(16).text('Property Image', { underline: true });
+  doc.moveDown();
+  
+  if (uploadedImage && uploadedImage.dataUrl) {
+    // Use uploaded image if available
+    try {
+      doc.image(uploadedImage.dataUrl, {
+        fit: [400, 300],
+        align: 'center'
+      });
+      doc.fontSize(10).text('User Uploaded Property Image', { align: 'center' });
+    } catch (error) {
+      console.error('Error adding uploaded image to PDF:', error.message);
+      doc.fontSize(10).text('Property image could not be loaded', { align: 'center' });
+    }
+  } else {
+    // Otherwise try to use ATTOM image
+    const imageUrl = attom?.property?.photo?.[0]?.url || 
+                    attom?.images?.[0]?.url || 
+                    attom?.photo?.url;
+    
+    if (imageUrl) {
+      try {
+        doc.image(imageUrl, {
+          fit: [400, 300],
+          align: 'center'
+        });
+        doc.fontSize(10).text('Property Image from ATTOM', { align: 'center' });
+      } catch (error) {
+        console.error('Error adding ATTOM image to PDF:', error.message);
+        doc.fontSize(10).text('Property image could not be loaded', { align: 'center' });
+      }
+    } else {
+      doc.fontSize(12).text('No property image available', { align: 'center' });
+    }
   }
 
   doc.end();
