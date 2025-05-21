@@ -474,11 +474,11 @@ footer a.disabled {
 }
 
 #collapse-all-btn::before {
-  content: "▼";
+  content: "◤";
   font-size: 10px;
 }
 
 #expand-all-btn::before {
-  content: "▲";
+  content: "◢";
   font-size: 10px;
 }
