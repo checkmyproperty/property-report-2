@@ -62,104 +62,141 @@ class HarrisCountyScraper {
     }
   }
 
-  async searchHCADQuickSearch(address) {
-    try {
-      const searchUrl = 'https://hcad.org/quick-search';
-      
-      console.log('🔍 Accessing HCAD Quick Search...');
-      
-      // First, get the search page
-      await this.delay();
-      const response = await this.session.get(searchUrl);
-      
-      if (response.status !== 200) {
-        console.log(`❌ Cannot access HCAD Quick Search: ${response.status}`);
-        return { error: 'HCAD Quick Search page not accessible' };
-      }
-      
-      console.log('✅ Successfully loaded HCAD Quick Search page');
-      
-      const $ = cheerio.load(response.data);
-      
-      // Parse the address for the form
-      const addressParts = this.parseAddress(address);
-      
-      // Look for the address search form
-      const addressForm = $('form').filter((i, form) => {
-        const formText = $(form).text().toLowerCase();
-        return formText.includes('address') && formText.includes('search');
-      });
-      
-      if (addressForm.length === 0) {
-        console.log('❌ Address search form not found');
-        return { error: 'Address search form not found on HCAD page' };
-      }
-      
-      console.log('✅ Found address search form');
-      
-      // Prepare form data
-      const formData = new URLSearchParams();
-      
-      // Add hidden fields
-      addressForm.find('input[type="hidden"]').each((i, input) => {
-        const name = $(input).attr('name');
-        const value = $(input).attr('value');
-        if (name && value) {
-          formData.append(name, value);
-        }
-      });
-      
-      // Add the tax year (default to 2025)
-      const taxYearSelect = addressForm.find('select[name*="year" i], select[name*="Year"]');
-      if (taxYearSelect.length > 0) {
-        const selectedYear = taxYearSelect.find('option:selected').val() || '2025';
-        formData.append(taxYearSelect.attr('name'), selectedYear);
-      }
-      
-      // Add street number and name
-      const streetNoInput = addressForm.find('input[name*="street" i][name*="no" i], input[id*="street" i][id*="no" i]');
-      const streetNameInput = addressForm.find('input[name*="street" i][name*="name" i], input[id*="street" i][id*="name" i]');
-      
-      if (streetNoInput.length > 0 && addressParts.streetNumber) {
-        formData.append(streetNoInput.attr('name'), addressParts.streetNumber);
-        console.log(`   Street Number: ${addressParts.streetNumber}`);
-      }
-      
-      if (streetNameInput.length > 0 && addressParts.streetName) {
-        formData.append(streetNameInput.attr('name'), addressParts.streetName);
-        console.log(`   Street Name: ${addressParts.streetName}`);
-      }
-      
-      // Get form action
-      const formAction = addressForm.attr('action') || searchUrl;
-      const submitUrl = formAction.startsWith('http') ? formAction : new URL(formAction, searchUrl).href;
-      
-      console.log('🔄 Submitting address search...');
-      
-      // Submit the form
-      await this.delay();
-      const searchResponse = await this.session.post(submitUrl, formData, {
-        headers: {
-          'Content-Type': 'application/x-www-form-urlencoded',
-          'Referer': searchUrl
-        }
-      });
-      
-      if (searchResponse.status !== 200) {
-        console.log(`❌ Search submission failed: ${searchResponse.status}`);
-        return { error: `Search submission failed: ${searchResponse.status}` };
-      }
-      
-      console.log('✅ Search submitted successfully');
-      
-      // Parse the results
-      return this.parseSearchResults(searchResponse.data, submitUrl);
-      
-    } catch (error) {
-      console.error('HCAD Quick Search error:', error.message);
-      return { error: `HCAD Quick Search failed: ${error.message}` };
+  // In your harris-county-scraper.js, replace the searchHCADQuickSearch method:
+
+async searchHCADQuickSearch(address) {
+  try {
+    const searchUrl = 'https://hcad.org/property-search/property-search';
+    
+    console.log('🔍 Accessing HCAD Property Search...');
+    
+    // First, get the search page
+    await this.delay();
+    const response = await this.session.get(searchUrl);
+    
+    if (response.status !== 200) {
+      console.log(`❌ Cannot access HCAD Property Search: ${response.status}`);
+      return { error: 'HCAD Property Search page not accessible' };
     }
+    
+    console.log('✅ Successfully loaded HCAD Property Search page');
+    
+    const $ = cheerio.load(response.data);
+    
+    // Look for the main search input field
+    const searchInput = $('input[type="text"]').first(); // Usually the main search box
+    const searchForm = searchInput.closest('form');
+    
+    if (!searchForm.length) {
+      console.log('❌ Property search form not found');
+      return { error: 'Property search form not found on HCAD page' };
+    }
+    
+    console.log('✅ Found property search form');
+    
+    // Prepare form data
+    const formData = new URLSearchParams();
+    
+    // Add hidden fields from the form
+    searchForm.find('input[type="hidden"]').each((i, input) => {
+      const name = $(input).attr('name');
+      const value = $(input).attr('value');
+      if (name && value) {
+        formData.append(name, value);
+      }
+    });
+    
+    // Add the search address to the main search field
+    const searchInputName = searchInput.attr('name') || 'search';
+    formData.append(searchInputName, address);
+    
+    console.log(`🔄 Submitting search for: ${address}`);
+    
+    // Get form action
+    const formAction = searchForm.attr('action') || searchUrl;
+    const submitUrl = formAction.startsWith('http') ? formAction : new URL(formAction, searchUrl).href;
+    
+    // Submit the search
+    await this.delay();
+    const searchResponse = await this.session.post(submitUrl, formData, {
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+        'Referer': searchUrl
+      }
+    });
+    
+    if (searchResponse.status !== 200) {
+      console.log(`❌ Search submission failed: ${searchResponse.status}`);
+      return { error: `Search submission failed: ${searchResponse.status}` };
+    }
+    
+    console.log('✅ Search submitted successfully');
+    
+    // Parse the results - look for the account number and property details
+    const $results = cheerio.load(searchResponse.data);
+    
+    const propertyResults = $results('tr, .property-result, .search-result');
+    
+    if (propertyResults.length === 0) {
+      console.log('❌ No search results found');
+      return { error: 'No property results found' };
+    }
+    
+    // Extract data from the results table 
+    const data = {
+      source: 'Harris County Appraisal District',
+      url: submitUrl
+    };
+    
+    // Look for account number 
+    const accountText = $results.text();
+    const accountMatch = accountText.match(/(\d{10,})/); // Long account numbers
+    if (accountMatch) {
+      data.accountNumber = accountMatch[1];
+      console.log(`✅ Found Account Number: ${data.accountNumber}`);
+    }
+    
+    // Look for owner name 
+    const ownerElement = $results('td:contains("Business"), td:contains("Owner")').next();
+    if (ownerElement.length) {
+      data.owner = ownerElement.text().trim();
+    }
+    
+    // Look for full address
+    const addressElement = $results('td').filter((i, el) => {
+      return $(el).text().includes('HOUSTON') || $(el).text().includes('TX');
+    });
+    if (addressElement.length) {
+      data.propertyAddress = addressElement.text().trim();
+    }
+    
+    // Try to find a detail link to get more property information
+    const detailLink = $results('a[href*="account"], a[href*="detail"], a[href*="property"]').first();
+    
+    if (detailLink.length) {
+      const detailUrl = detailLink.attr('href');
+      const fullDetailUrl = detailUrl.startsWith('http') ? detailUrl : new URL(detailUrl, searchUrl).href;
+      
+      console.log(`🔍 Following property detail link: ${fullDetailUrl}`);
+      
+      // Get detailed property information
+      await this.delay();
+      const detailResponse = await this.session.get(fullDetailUrl);
+      
+      if (detailResponse.status === 200) {
+        const detailData = this.parsePropertyDetailPage(detailResponse.data, fullDetailUrl);
+        return { ...data, ...detailData };
+      }
+    }
+    
+    console.log('✅ Successfully extracted basic property data');
+    return data;
+    
+  } catch (error) {
+    console.error('HCAD Property Search error:', error.message);
+    return { error: `HCAD Property Search failed: ${error.message}` };
   }
+}
 
   // Single implementation of parseSearchResults that handles both scenarios
   async parseSearchResults(html, baseUrl = 'https://hcad.org') {

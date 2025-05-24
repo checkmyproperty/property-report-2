@@ -356,30 +356,10 @@ function updateDownloadButton(address) {
 
 // Generate updated PDF with current field values
 async function generateUpdatedPDF() {
-  const requestBody = {
-    address: address,
-    currentValues: currentValues,
-    sources: storedData,
-    county: selectedCounty
-  };
-  
-  // Add the uploaded image if available
-  if (window.reportData && window.reportData.uploadedImage) {
-    requestBody.uploadedImage = window.reportData.uploadedImage;
-  }
-  
-  // Send the POST request with the updated body
-  const response = await fetch('/downloadReport', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json'
-    },
-    body: JSON.stringify(requestBody)
-  });
   const address = document.getElementById('address-input').value.trim();
   if (!address) return;
   
-  console.log('Generating updated PDF...'); // Debug log
+  console.log('Generating updated PDF...'); 
   
   try {
     // Get current values from all fields
@@ -398,23 +378,30 @@ async function generateUpdatedPDF() {
       }
     });
     
-    console.log('Current values:', currentValues); // Debug log
+    console.log('Current values:', currentValues); 
     
-    // Send to backend with current values
+    // Get county selection
     const countySelect = document.getElementById('county-select');
     const selectedCounty = countySelect ? countySelect.value : 'none';
+    
+    const requestBody = {
+      address: address,
+      currentValues: currentValues,
+      sources: storedData,
+      county: selectedCounty
+    };
+    
+    // Add the uploaded image if available
+    if (window.reportData && window.reportData.uploadedImage) {
+      requestBody.uploadedImage = window.reportData.uploadedImage;
+    }
     
     const response = await fetch('/downloadReport', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json'
       },
-      body: JSON.stringify({
-        address: address,
-        currentValues: currentValues,
-        sources: storedData,
-        county: selectedCounty
-      })
+      body: JSON.stringify(requestBody)
     });
     
     if (!response.ok) {
@@ -422,7 +409,7 @@ async function generateUpdatedPDF() {
     }
     
     const pdfBlob = await response.blob();
-    currentPdfBlob = pdfBlob; // Store the blob for direct download
+    currentPdfBlob = pdfBlob;
     const buffer = await pdfBlob.arrayBuffer();
     pdfDoc = await pdfjsLib.getDocument({ data: buffer }).promise;
     
@@ -437,13 +424,15 @@ async function generateUpdatedPDF() {
     // Update the download button with the new PDF
     updateDownloadButton(address);
     
-    console.log('PDF updated successfully'); // Debug log
+    console.log('PDF updated successfully'); 
     
   } catch (error) {
     console.error('PDF regeneration error:', error);
-    // Show error to user
+    // Show error to user if status box exists
     const statusBox = document.getElementById('status-box');
-    statusBox.innerHTML = `<span style="color:red;">Error updating PDF: ${error.message}</span>`;
+    if (statusBox) {
+      statusBox.innerHTML = `<span style="color:red;">Error updating PDF: ${error.message}</span>`;
+    }
   }
 }
 
@@ -553,8 +542,10 @@ async function handleFetch() {
   } else if (selectedCounty === 'fortbend') {
     fetchFortBendCountyData(address);
   } else if (selectedCounty === 'none') {
-    // Skip county scraping
-    statusBox.textContent = `County scraping skipped. Using ATTOM data only.`;
+    const statusBox = document.getElementById('status-box');
+    if (statusBox) {
+      statusBox.innerHTML = '<span style="color:blue;">County scraping skipped. </span>';
+    }
   }
 
   try {

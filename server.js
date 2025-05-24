@@ -558,58 +558,6 @@ app.post('/downloadReport', async (req, res) => {
   }
 });
 
-// PDF download API - POST version for manual updates
-app.post('/downloadReport', async (req, res) => {
-  console.log('POST /downloadReport called');
-  console.log('Request body:', req.body);
-  
-  const { address, currentValues, sources, county } = req.body;
-  
-  if (!address) {
-    return res.status(400).send('Address parameter is required');
-  }
-  
-  try {
-    // Use provided sources if available, otherwise fetch fresh data
-    const dataSources = sources || (await fetchPropertyData(address, county)).sources;
-    generatePDFResponse(res, address, dataSources, currentValues || {});
-  } catch (err) {
-    console.error('PDF Error:', err);
-    res.status(500).send(`PDF generation error: ${err.message}`);
-  }
-});
-
-app.get('/fetch-county-data', async (req, res) => {
-  const address = req.query.address;
-  const county = req.query.county;
-  
-  if (!address) {
-    return res.status(400).json({ error: 'Address is required' });
-  }
-  
-  try {
-    let countyData = { error: 'County not supported' };
-    
-    if (county === 'harris' && harrisCountyScraper) {
-      console.log('Fetching Harris County data for:', address);
-      countyData = await harrisCountyScraper.searchProperty(address);
-      countyData.county = 'Harris County';
-    } else if (county === 'fortbend' && fortBendCountyScraper) {
-      console.log('Fetching Fort Bend County data for:', address);
-      countyData = await fortBendCountyScraper.searchProperty(address);
-      countyData.county = 'Fort Bend County';
-    }
-    
-    res.json(countyData);
-  } catch (error) {
-    console.error(`Error fetching ${county} county data:`, error);
-    res.status(500).json({ 
-      error: `${county} county data fetch failed: ${error.message}`,
-      county: county
-    });
-  }
-});
-
 app.get('/fetch-county-data', async (req, res) => {
   const address = req.query.address;
   const county = req.query.county;
