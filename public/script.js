@@ -619,7 +619,7 @@ async function handleFetch() {
       // Add upload handler
       document.getElementById('image-upload').addEventListener('change', handleImageUpload);
     }
-    
+
     // Fetch and display PDF
     try {
       const pdfBlob = await fetchPdfBlob(address);
@@ -1131,16 +1131,10 @@ function showImageUploadOption(container) {
   const uploadId = 'image-upload-' + Date.now();
   
   container.innerHTML = `
-    <div class="image-upload-zone">
-      <div class="upload-area" onclick="document.getElementById('${uploadId}').click()">
-        <div class="upload-icon">📁</div>
-        <div class="upload-text">
-          <div class="upload-title">Upload Property Image</div>
-          <div class="upload-subtitle">Click to select or drag & drop</div>
-          <div class="upload-specs">Recommended: 800×600px • Max 10MB • JPG, PNG, GIF</div>
-        </div>
-      </div>
-      <input type="file" id="${uploadId}" accept="image/*" style="display: none;">
+    <div class="image-placeholder">
+      <div class="placeholder-text">No property image available</div>
+      <label for="image-upload" class="upload-button">Upload Image</label>
+      <input type="file" id="image-upload" accept="image/*" hidden>
     </div>
   `;
   
