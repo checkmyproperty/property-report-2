@@ -303,9 +303,9 @@ function clearAllFields() {
   });
   
   // Remove any property image if present
-  const existingContainer = document.getElementById('property-image-container');
+  const existingContainer = document.querySelector('.property-image-container');
   if (existingContainer) {
-    existingContainer.remove();
+    existingContainer.innerHTML = "";
   }
 }
 
@@ -577,7 +577,7 @@ async function handleFetch() {
     setTimeout(() => {
       displayPropertyImage(storedData.attom);
     }, 100);
-    
+
     // Populate all fields with updated county paths
     populateField('beds', storedData.attom.building?.rooms?.beds, storedData.county.bedrooms);
     populateField('baths', storedData.attom.building?.rooms?.bathsfull, storedData.county.bathrooms);
@@ -604,7 +604,22 @@ async function handleFetch() {
       storedData.county.owner
     );
     populateField('mailing', storedData.attom.owner?.mailingaddressoneline, storedData.county.mailingAddress);
-
+    
+    // Ensure image section is populated
+    const imageContainer = document.querySelector('.property-image-container');
+    if (imageContainer && imageContainer.innerHTML.trim() === '') {
+      imageContainer.innerHTML = `
+        <div class="image-placeholder">
+          <div class="placeholder-text">No property image available</div>
+          <label for="image-upload" class="upload-button">Upload Image</label>
+          <input type="file" id="image-upload" accept="image/*" hidden>
+        </div>
+      `;
+      
+      // Add upload handler
+      document.getElementById('image-upload').addEventListener('change', handleImageUpload);
+    }
+    
     // Fetch and display PDF
     try {
       const pdfBlob = await fetchPdfBlob(address);
