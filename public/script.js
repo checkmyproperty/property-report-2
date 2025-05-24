@@ -328,7 +328,19 @@ async function fetchPdfBlob(address) {
   const countySelect = document.getElementById('county-select');
   const selectedCounty = countySelect ? countySelect.value : 'none';
   
-  const res = await fetch(`/downloadReport?address=${encodeURIComponent(address)}&county=${selectedCounty}`);
+  const res = await fetch('/downloadReport', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({
+      address: address,
+      county: selectedCounty,
+      currentValues: {},
+      sources: storedData
+    })
+  });
+  
   if (!res.ok) {
     const errorText = await res.text();
     throw new Error(`PDF fetch failed: ${res.status} - ${errorText}`);
