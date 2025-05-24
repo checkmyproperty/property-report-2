@@ -1127,43 +1127,21 @@ function removeImage() {
 }
 
 function showImageUploadOption(container) {
-  // Create unique ID for this instance
-  const uploadId = 'image-upload-' + Date.now();
-  
+  // Create unique ID to avoid conflicts
+  const uniqueId = 'image-upload-' + Date.now();
   container.innerHTML = `
     <div class="image-placeholder">
       <div class="placeholder-text">No property image available</div>
-      <label for="image-upload" class="upload-button">Upload Image</label>
-      <input type="file" id="image-upload" accept="image/*" hidden>
+      <label for="${uniqueId}" class="upload-button">Upload Image</label>
+      <input type="file" id="${uniqueId}" accept="image/*" hidden>
     </div>
   `;
   
-  // Add the event listener to the new input
-  const fileInput = document.getElementById(uploadId);
-  fileInput.addEventListener('change', handleImageUpload);
-  
-  // Add drag and drop functionality
-  const uploadArea = container.querySelector('.upload-area');
-  
-  uploadArea.addEventListener('dragover', (e) => {
-    e.preventDefault();
-    uploadArea.classList.add('drag-over');
-  });
-  
-  uploadArea.addEventListener('dragleave', (e) => {
-    e.preventDefault();
-    uploadArea.classList.remove('drag-over');
-  });
-  
-  uploadArea.addEventListener('drop', (e) => {
-    e.preventDefault();
-    uploadArea.classList.remove('drag-over');
-    
-    const files = e.dataTransfer.files;
-    if (files.length > 0) {
-      // Simulate file input change event
-      fileInput.files = files;
-      handleImageUpload({ target: { files: files } });
+  // Add the event listener with the unique ID
+  setTimeout(() => {
+    const fileInput = document.getElementById(uniqueId);
+    if (fileInput) {
+      fileInput.addEventListener('change', handleImageUpload);
     }
-  });
+  }, 10);
 }
