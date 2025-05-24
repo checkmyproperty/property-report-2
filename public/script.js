@@ -641,16 +641,13 @@ async function handleFetch() {
 }
 
 function displayPropertyImage(attomData) {
-  // Get the property image container
-  let container = document.getElementById('property-image-container');
+  // FIXED: Always look for the container in the generated sections
+  let container = document.querySelector('.property-image-container');
   
-  // If no container exists yet, create it
+  // If no container exists, the image section wasn't generated - skip
   if (!container) {
-    // Container might not exist if we're using the new section approach
-    container = document.querySelector('.property-image-container');
-    
-    // If we still don't have a container, return
-    if (!container) return;
+    console.log('Property image container not found - section may not be generated yet');
+    return;
   }
   
   // Clear the container
@@ -1112,11 +1109,13 @@ function removeImage() {
   }
 }
 
-// Enhanced function to show image upload option
 function showImageUploadOption(container) {
+  // Create unique ID for this instance
+  const uploadId = 'image-upload-' + Date.now();
+  
   container.innerHTML = `
     <div class="image-upload-zone">
-      <div class="upload-area" onclick="document.getElementById('image-upload').click()">
+      <div class="upload-area" onclick="document.getElementById('${uploadId}').click()">
         <div class="upload-icon">📁</div>
         <div class="upload-text">
           <div class="upload-title">Upload Property Image</div>
@@ -1124,9 +1123,13 @@ function showImageUploadOption(container) {
           <div class="upload-specs">Recommended: 800×600px • Max 10MB • JPG, PNG, GIF</div>
         </div>
       </div>
-      <input type="file" id="image-upload" accept="image/*" style="display: none;" onchange="handleImageUpload(event)">
+      <input type="file" id="${uploadId}" accept="image/*" style="display: none;">
     </div>
   `;
+  
+  // Add the event listener to the new input
+  const fileInput = document.getElementById(uploadId);
+  fileInput.addEventListener('change', handleImageUpload);
   
   // Add drag and drop functionality
   const uploadArea = container.querySelector('.upload-area');
@@ -1148,7 +1151,6 @@ function showImageUploadOption(container) {
     const files = e.dataTransfer.files;
     if (files.length > 0) {
       // Simulate file input change event
-      const fileInput = document.getElementById('image-upload');
       fileInput.files = files;
       handleImageUpload({ target: { files: files } });
     }
