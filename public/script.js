@@ -574,8 +574,10 @@ async function handleFetch() {
     if (storedData.county.error) console.warn('County error:', storedData.county.error);
 
     // Display property image if available from ATTOM
-    displayPropertyImage(storedData.attom);
-
+    setTimeout(() => {
+      displayPropertyImage(storedData.attom);
+    }, 100);
+    
     // Populate all fields with updated county paths
     populateField('beds', storedData.attom.building?.rooms?.beds, storedData.county.bedrooms);
     populateField('baths', storedData.attom.building?.rooms?.bathsfull, storedData.county.bathrooms);
