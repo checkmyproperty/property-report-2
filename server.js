@@ -571,11 +571,11 @@ app.get('/fetch-county-data', async (req, res) => {
     
     if (county === 'harris' && harrisCountyScraper) {
       console.log('Fetching Harris County data for:', address);
-      countyData = await harrisCountyScraper.searchProperty(address);
+      countyData = await harrisCountyScraper.searchProperty(address, true);
       countyData.county = 'Harris County';
     } else if (county === 'fortbend' && fortBendCountyScraper) {
       console.log('Fetching Fort Bend County data for:', address);
-      countyData = await fortBendCountyScraper.searchProperty(address);
+      countyData = await fortBendCountyScraper.searchProperty(address, true);
       countyData.county = 'Fort Bend County';
     }
     
