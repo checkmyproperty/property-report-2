@@ -303,9 +303,9 @@ function clearAllFields() {
   });
   
   // Remove any property image if present
-  const existingContainer = document.getElementById('property-image-container');
+  const existingContainer = document.querySelector('.property-image-container');
   if (existingContainer) {
-    existingContainer.remove();
+    existingContainer.innerHTML = "";
   }
 }
 
@@ -604,6 +604,21 @@ async function handleFetch() {
       storedData.county.owner
     );
     populateField('mailing', storedData.attom.owner?.mailingaddressoneline, storedData.county.mailingAddress);
+    
+    // Ensure image section is populated
+    const imageContainer = document.querySelector('.property-image-container');
+    if (imageContainer && imageContainer.innerHTML.trim() === '') {
+      imageContainer.innerHTML = `
+        <div class="image-placeholder">
+          <div class="placeholder-text">No property image available</div>
+          <label for="image-upload" class="upload-button">Upload Image</label>
+          <input type="file" id="image-upload" accept="image/*" hidden>
+        </div>
+      `;
+      
+      // Add upload handler
+      document.getElementById('image-upload').addEventListener('change', handleImageUpload);
+    }
 
     // Fetch and display PDF
     try {
@@ -1136,20 +1151,13 @@ function removeImage() {
 }
 
 function showImageUploadOption(container) {
-  // Create unique ID for this instance
-  const uploadId = 'image-upload-' + Date.now();
-  
+  // Create unique ID to avoid conflicts
+  const uniqueId = 'image-upload-' + Date.now();
   container.innerHTML = `
-    <div class="image-upload-zone">
-      <div class="upload-area" onclick="document.getElementById('${uploadId}').click()">
-        <div class="upload-icon">📁</div>
-        <div class="upload-text">
-          <div class="upload-title">Upload Property Image</div>
-          <div class="upload-subtitle">Click to select or drag & drop</div>
-          <div class="upload-specs">Recommended: 800×600px • Max 10MB • JPG, PNG, GIF</div>
-        </div>
-      </div>
-      <input type="file" id="${uploadId}" accept="image/*" style="display: none;">
+    <div class="image-placeholder">
+      <div class="placeholder-text">No property image available</div>
+      <label for="${uniqueId}" class="upload-button">Upload Image</label>
+      <input type="file" id="${uniqueId}" accept="image/*" hidden>
     </div>
   `;
   
@@ -1181,11 +1189,4 @@ function showImageUploadOption(container) {
       handleImageUpload({ target: { files: files } });
     }
   });
-}
-
-function ensureImageSectionInitialized() {
-  const container = document.querySelector('.property-image-container');
-  if (container && container.innerHTML.trim() === '') {
-    showImageUploadOption(container);
-  }
 }
