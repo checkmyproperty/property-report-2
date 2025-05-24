@@ -35,17 +35,16 @@ class FortBendCountyScraper {
   }
 
   // Main entry point method - Fort Bend County Appraisal District search
-  async searchProperty(address) {
+  async searchProperty(address, bypassCountyCheck = false) {
     try {
       console.log('Searching Fort Bend County for:', address);
       
-      if (!FortBendCountyScraper.isInFortBendCounty(address)) {
+      if (!bypassCountyCheck && !FortBendCountyScraper.isInFortBendCounty(address)) {
         return { error: 'Address does not appear to be in Fort Bend County, Texas' };
       }
       
       await this.delay();
       
-      // Search using the FBCAD search page
       const result = await this.searchFBCAD(address);
       
       if (result && !result.error) {
@@ -53,7 +52,7 @@ class FortBendCountyScraper {
       } else {
         console.log('FBCAD search failed, trying alternative methods...');
         // Could add alternative search methods here if needed
-        return result; // Return the error from quick search for now
+        return result; // Return the error from quick search
       }
       
     } catch (error) {
@@ -64,7 +63,6 @@ class FortBendCountyScraper {
 
   async searchFBCAD(searchQuery) {
     try {
-      // The base search URL for FBCAD
       const searchUrl = 'https://esearch.fbcad.org/Search/Result';
       
       console.log('🔍 Accessing FBCAD search...');

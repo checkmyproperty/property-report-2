@@ -35,17 +35,16 @@ class HarrisCountyScraper {
   }
 
   // Main entry point method - Harris County Appraisal District search
-  async searchProperty(address) {
+  async searchProperty(address, bypassCountyCheck = false) {
     try {
       console.log('Searching Harris County for:', address);
       
-      if (!HarrisCountyScraper.isInHarrisCounty(address)) {
+      if (!bypassCountyCheck && !HarrisCountyScraper.isInHarrisCounty(address)) {
         return { error: 'Address does not appear to be in Harris County, Texas' };
       }
       
       await this.delay();
       
-      // Use the HCAD Quick Search
       const result = await this.searchHCADQuickSearch(address);
       
       if (result && !result.error) {
@@ -53,7 +52,7 @@ class HarrisCountyScraper {
       } else {
         console.log('Quick search failed, trying alternative methods...');
         // Could add alternative search methods here if needed
-        return result; // Return the error from quick search for now
+        return result; // Return the error from quick search
       }
       
     } catch (error) {
@@ -61,8 +60,6 @@ class HarrisCountyScraper {
       return { error: `Harris County search failed: ${error.message}` };
     }
   }
-
-  // In your harris-county-scraper.js, replace the searchHCADQuickSearch method:
 
 async searchHCADQuickSearch(address) {
   try {

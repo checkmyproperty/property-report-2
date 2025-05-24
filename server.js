@@ -153,7 +153,7 @@ async function fetchPropertyData(address, selectedCounty = null) {
     if (selectedCounty === 'harris' && harrisCountyScraper) {
       console.log('Using Harris County scraper as selected by user');
       try {
-        countyData = await harrisCountyScraper.searchProperty(address);
+        countyData = await harrisCountyScraper.searchProperty(address, true);
         countyData.county = 'Harris County';
       } catch (err) {
         countyData = { 
@@ -164,7 +164,7 @@ async function fetchPropertyData(address, selectedCounty = null) {
     } else if (selectedCounty === 'fortbend' && fortBendCountyScraper) {
       console.log('Using Fort Bend County scraper as selected by user');
       try {
-        countyData = await fortBendCountyScraper.searchProperty(address);
+        countyData = await fortBendCountyScraper.searchProperty(address, true);
         countyData.county = 'Fort Bend County';
       } catch (err) {
         countyData = { 

@@ -442,7 +442,7 @@ function fetchHarrisCountyData(address) {
   const statusBox = document.getElementById('status-box');
   statusBox.textContent = `Fetching Harris County data for ${address}...`;
   
-  // Make an API call to your backend to specifically fetch Harris County data
+  // Make an API call to the backend to specifically fetch Harris County data
   return fetch(`/fetch-county-data?address=${encodeURIComponent(address)}&county=harris`)
     .then(response => {
       if (!response.ok) {
@@ -481,7 +481,7 @@ function fetchFortBendCountyData(address) {
   const statusBox = document.getElementById('status-box');
   statusBox.textContent = `Fetching Fort Bend County data for ${address}...`;
   
-  // Make an API call to your backend to specifically fetch Fort Bend County data
+  // Make an API call to the backend to specifically fetch Fort Bend County data
   return fetch(`/fetch-county-data?address=${encodeURIComponent(address)}&county=fortbend`)
     .then(response => {
       if (!response.ok) {
