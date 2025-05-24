@@ -573,8 +573,10 @@ async function handleFetch() {
     if (storedData.attom.error) console.warn('ATTOM error:', storedData.attom.error);
     if (storedData.county.error) console.warn('County error:', storedData.county.error);
 
-    // Display property image if available from ATTOM
-    displayPropertyImage(storedData.attom);
+    // Display property image if available from ATTOM - with delay to ensure DOM is ready
+    setTimeout(() => {
+      displayPropertyImage(storedData.attom);
+    }, 200);  
 
     // Populate all fields with updated county paths
     populateField('beds', storedData.attom.building?.rooms?.beds, storedData.county.bedrooms);
@@ -638,6 +640,7 @@ async function handleFetch() {
   } finally {
     showLoading(false);
   }
+  ensureImageSectionInitialized();
 }
 
 function displayPropertyImage(attomData) {
@@ -826,32 +829,55 @@ document.addEventListener('DOMContentLoaded', function() {
             </button>
           </h3>
           <div class="section-content">
-            <div id="property-image-container" class="property-image-container">
-              <div class="image-placeholder">
-                <div class="placeholder-text">No property image available</div>
-                <label for="image-upload" class="upload-button">Upload Image</label>
-                <input type="file" id="image-upload" accept="image/*" hidden>
+            <div class="property-image-container">
+              <div class="image-upload-zone">
+                <div class="upload-area" onclick="document.getElementById('main-image-upload').click()">
+                  <div class="upload-icon">📁</div>
+                  <div class="upload-text">
+                    <div class="upload-title">Upload Property Image</div>
+                    <div class="upload-subtitle">Click to select or drag & drop</div>
+                    <div class="upload-specs">Recommended: 800×600px • Max 10MB • JPG, PNG, GIF</div>
+                  </div>
+                </div>
+                <input type="file" id="main-image-upload" accept="image/*" style="display: none;">
               </div>
             </div>
           </div>
         `;
-        } else {
-          // Regular field sections
-          section.innerHTML = `
-            <h3 class="section-header">
-              <button class="collapse-toggle" aria-expanded="true">
-                <span class="toggle-icon">▼</span>
-                ${group.title}
-              </button>
-            </h3>
-            <div class="section-content">
-              <div class="field-container">
-                ${generateFields(group.fields)}
-              </div>
-            </div>
-          `;
-        }
 
+        // Add event listener for the file input immediately after creating it
+        setTimeout(() => {
+          const mainUpload = document.getElementById('main-image-upload');
+          if (mainUpload) {
+            mainUpload.addEventListener('change', handleImageUpload);
+            
+            // Add drag and drop to the upload area
+            const uploadArea = section.querySelector('.upload-area');
+            if (uploadArea) {
+              uploadArea.addEventListener('dragover', (e) => {
+                e.preventDefault();
+                uploadArea.classList.add('drag-over');
+              });
+              
+              uploadArea.addEventListener('dragleave', (e) => {
+                e.preventDefault();
+                uploadArea.classList.remove('drag-over');
+              });
+              
+              uploadArea.addEventListener('drop', (e) => {
+                e.preventDefault();
+                uploadArea.classList.remove('drag-over');
+                
+                const files = e.dataTransfer.files;
+                if (files.length > 0) {
+                  mainUpload.files = files;
+                  handleImageUpload({ target: { files: files } });
+                }
+              });
+            }
+          }
+        }, 100);
+      }
       selectorsContainer.appendChild(section);
     });
     
@@ -1155,4 +1181,11 @@ function showImageUploadOption(container) {
       handleImageUpload({ target: { files: files } });
     }
   });
+}
+
+function ensureImageSectionInitialized() {
+  const container = document.querySelector('.property-image-container');
+  if (container && container.innerHTML.trim() === '') {
+    showImageUploadOption(container);
+  }
 }
