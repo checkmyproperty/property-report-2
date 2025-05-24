@@ -869,6 +869,11 @@ const fieldGroups = [
       { id: "owner", label: "Owner", placeholder: "Owner" },
       { id: "mailing", label: "Mailing Address", placeholder: "Mailing Address" }
     ]
+  },
+  {
+    title: "Property Image",
+    type: "image", // Special type for image section
+    fields: [] // No regular fields for image section
   }
 ];
 
@@ -913,10 +918,10 @@ function createField(field) {
 
 // Wait for DOM to be fully loaded before initializing
 document.addEventListener('DOMContentLoaded', function() {
-  // Generate form fields from our configuration
+  // Generate form fields from the configuration
   const selectorsContainer = document.querySelector('.selectors');
   
-  // Only generate if the container exists and we haven't already generated the fields
+  // Only generate if the container exists and haven't already generated the fields
   if (selectorsContainer && !window.fieldsGenerated) {
     // Clear existing content
     selectorsContainer.innerHTML = ''; 
@@ -926,26 +931,46 @@ document.addEventListener('DOMContentLoaded', function() {
       // Create section element
       const section = document.createElement('div');
       section.className = 'collapsible-section';
-      
-      // Add section header
-      section.innerHTML = `
-        <h3 class="section-header">
-          <button class="collapse-toggle" aria-expanded="true">
-            <span class="toggle-icon">▼</span>
-            ${group.title}
-          </button>
-        </h3>
-        <div class="section-content">
-          <div class="field-container">
-            ${generateFields(group.fields)}
+
+      if (group.type === 'image') {
+        section.innerHTML = `
+          <h3 class="section-header">
+            <button class="collapse-toggle" aria-expanded="true">
+              <span class="toggle-icon">▼</span>
+              ${group.title}
+            </button>
+          </h3>
+          <div class="section-content">
+            <div id="property-image-container" class="property-image-container">
+              <div class="image-placeholder">
+                <div class="placeholder-text">No property image available</div>
+                <label for="image-upload" class="upload-button">Upload Image</label>
+                <input type="file" id="image-upload" accept="image/*" hidden>
+              </div>
+            </div>
           </div>
-        </div>
-      `;
-      
+        `;
+        } else {
+          // Regular field sections
+          section.innerHTML = `
+            <h3 class="section-header">
+              <button class="collapse-toggle" aria-expanded="true">
+                <span class="toggle-icon">▼</span>
+                ${group.title}
+              </button>
+            </h3>
+            <div class="section-content">
+              <div class="field-container">
+                ${generateFields(group.fields)}
+              </div>
+            </div>
+          `;
+        }
+
       selectorsContainer.appendChild(section);
     });
     
-    // Mark that we've generated the fields
+    // Mark that the fields are generated
     window.fieldsGenerated = true;
   }
 
