@@ -700,118 +700,6 @@ function displayPropertyImage(attomData) {
   }
 }
 
-// Function to show image upload option
-function showImageUploadOption(container) {
-  // Create placeholder
-  const placeholder = document.createElement('div');
-  placeholder.className = 'image-placeholder';
-  
-  // Add placeholder text
-  const text = document.createElement('div');
-  text.className = 'placeholder-text';
-  text.textContent = 'No property image available';
-  
-  // Create upload button
-  const uploadLabel = document.createElement('label');
-  uploadLabel.className = 'upload-button';
-  uploadLabel.textContent = 'Upload Image';
-  uploadLabel.htmlFor = 'image-upload';
-  
-  // Create file input
-  const fileInput = document.createElement('input');
-  fileInput.type = 'file';
-  fileInput.id = 'image-upload';
-  fileInput.accept = 'image/*';
-  fileInput.style.display = 'none';
-  
-  // Add event listener for file selection
-  fileInput.addEventListener('change', handleImageUpload);
-  
-  // Add elements to placeholder
-  placeholder.appendChild(text);
-  placeholder.appendChild(uploadLabel);
-  placeholder.appendChild(fileInput);
-  
-  // Clear and add placeholder to container
-  container.innerHTML = '';
-  container.appendChild(placeholder);
-}
-
-// Function to handle image upload
-function handleImageUpload(event) {
-  const file = event.target.files[0];
-  if (!file) return;
-  
-  // Check if it's an image
-  if (!file.type.startsWith('image/')) {
-    alert('Please select an image file');
-    return;
-  }
-  
-  // Get container
-  const container = document.querySelector('.property-image-container');
-  if (!container) return;
-  
-  // Clear container
-  container.innerHTML = '';
-  
-  // Create image element
-  const img = document.createElement('img');
-  
-  // Use FileReader to load the image
-  const reader = new FileReader();
-  reader.onload = function(e) {
-    img.src = e.target.result;
-  };
-  reader.readAsDataURL(file);
-  
-  img.alt = 'Property Image';
-  
-  // Create label
-  const label = document.createElement('div');
-  label.className = 'property-image-label';
-  label.textContent = 'Uploaded Property Image';
-  
-  // Add image controls
-  const controls = document.createElement('div');
-  controls.className = 'image-controls';
-  
-  // Replace button
-  const replaceBtn = document.createElement('button');
-  replaceBtn.textContent = 'Replace Image';
-  replaceBtn.onclick = function() {
-    showImageUploadOption(container);
-  };
-  
-  // Add elements
-  controls.appendChild(replaceBtn);
-  container.appendChild(img);
-  container.appendChild(label);
-  container.appendChild(controls);
-  
-  // Store the image in the form data for submission with the report
-  const imgData = {
-    name: file.name,
-    type: file.type,
-    // Will be populated by the reader.onload event
-    dataUrl: null
-  };
-  
-  reader.onload = function(e) {
-    img.src = e.target.result;
-    imgData.dataUrl = e.target.result;
-    
-    // Store in the global data
-    if (!window.reportData) window.reportData = {};
-    window.reportData.uploadedImage = imgData;
-    
-    // Update PDF if one exists
-    if (pdfDoc) {
-      generateUpdatedPDF();
-    }
-  };
-}
-
 // Cleanup function to be called when page unloads
 function cleanupObjectURLs() {
   const downloadBtn = document.getElementById('download-pdf');
@@ -1057,3 +945,212 @@ document.addEventListener('DOMContentLoaded', function() {
     });
   });
 });
+
+// Function to handle image upload with property report sizing
+function handleImageUpload(event) {
+  const file = event.target.files[0];
+  if (!file) return;
+  
+  // Check if it's an image
+  if (!file.type.startsWith('image/')) {
+    alert('Please select an image file (JPG, PNG, GIF, etc.)');
+    return;
+  }
+  
+  // Check file size (limit to 10MB)
+  const maxSize = 10 * 1024 * 1024; // 10MB
+  if (file.size > maxSize) {
+    alert('Image file is too large. Please select an image smaller than 10MB.');
+    return;
+  }
+  
+  // Get container
+  const container = document.querySelector('.property-image-container');
+  if (!container) return;
+  
+  // Show loading state
+  container.innerHTML = `
+    <div class="image-loading">
+      <div class="loading-spinner"></div>
+      <div class="loading-text">Processing image...</div>
+    </div>
+  `;
+  
+  // Create FileReader to process the image
+  const reader = new FileReader();
+  reader.onload = function(e) {
+    // Create an image element to get dimensions and resize
+    const img = new Image();
+    img.onload = function() {
+      // Create canvas for resizing to property report standards
+      const canvas = document.createElement('canvas');
+      const ctx = canvas.getContext('2d');
+      
+      // Property report standard dimensions (4:3 aspect ratio, max 800x600)
+      const maxWidth = 800;
+      const maxHeight = 600;
+      let { width, height } = img;
+      
+      // Calculate new dimensions maintaining aspect ratio
+      if (width > height) {
+        if (width > maxWidth) {
+          height = (height * maxWidth) / width;
+          width = maxWidth;
+        }
+      } else {
+        if (height > maxHeight) {
+          width = (width * maxHeight) / height;
+          height = maxHeight;
+        }
+      }
+      
+      // Set canvas dimensions
+      canvas.width = width;
+      canvas.height = height;
+      
+      // Draw and resize image
+      ctx.drawImage(img, 0, 0, width, height);
+      
+      // Convert to optimized format (JPEG with 85% quality for smaller file size)
+      const optimizedDataUrl = canvas.toDataURL('image/jpeg', 0.85);
+      
+      // Display the processed image
+      displayUploadedImage(optimizedDataUrl, file.name, width, height, file.size);
+      
+      // Store the optimized image data
+      const imgData = {
+        name: file.name,
+        type: 'image/jpeg', // Always convert to JPEG for consistency
+        dataUrl: optimizedDataUrl,
+        originalSize: file.size,
+        optimizedSize: Math.round(optimizedDataUrl.length * 0.75), // Rough size estimate
+        dimensions: `${width}x${height}`
+      };
+      
+      // Store in global data
+      if (!window.reportData) window.reportData = {};
+      window.reportData.uploadedImage = imgData;
+      
+      console.log('Image processed and stored:', {
+        original: `${file.name} (${(file.size/1024).toFixed(1)}KB)`,
+        processed: `${width}x${height} (${(imgData.optimizedSize/1024).toFixed(1)}KB)`
+      });
+      
+      // Update PDF if one exists
+      if (pdfDoc) {
+        generateUpdatedPDF();
+      }
+    };
+    
+    img.onerror = function() {
+      container.innerHTML = `
+        <div class="image-error">
+          <div class="error-icon">⚠️</div>
+          <div class="error-text">Failed to process image. Please try a different image.</div>
+          <button onclick="showImageUploadOption(document.querySelector('.property-image-container'))" class="retry-button">Try Again</button>
+        </div>
+      `;
+    };
+    
+    img.src = e.target.result;
+  };
+  
+  reader.onerror = function() {
+    container.innerHTML = `
+      <div class="image-error">
+        <div class="error-icon">⚠️</div>
+        <div class="error-text">Failed to read image file. Please try again.</div>
+        <button onclick="showImageUploadOption(document.querySelector('.property-image-container'))" class="retry-button">Try Again</button>
+      </div>
+    `;
+  };
+  
+  reader.readAsDataURL(file);
+}
+
+// Function to display the uploaded and processed image
+function displayUploadedImage(dataUrl, fileName, width, height, originalSize) {
+  const container = document.querySelector('.property-image-container');
+  if (!container) return;
+  
+  container.innerHTML = `
+    <div class="uploaded-image-display">
+      <img src="${dataUrl}" alt="Property Image" class="property-image">
+      <div class="image-info">
+        <div class="image-label">📸 Uploaded Property Image</div>
+        <div class="image-details">
+          <span class="file-name">${fileName}</span>
+          <span class="image-specs">${width}×${height} • ${(originalSize/1024).toFixed(1)}KB</span>
+        </div>
+      </div>
+      <div class="image-controls">
+        <button onclick="replaceImage()" class="replace-btn">Replace Image</button>
+        <button onclick="removeImage()" class="remove-btn">Remove</button>
+      </div>
+    </div>
+  `;
+}
+
+// Function to replace the current image
+function replaceImage() {
+  showImageUploadOption(document.querySelector('.property-image-container'));
+}
+
+// Function to remove the uploaded image
+function removeImage() {
+  // Clear stored image data
+  if (window.reportData && window.reportData.uploadedImage) {
+    delete window.reportData.uploadedImage;
+  }
+  
+  // Show upload option again
+  showImageUploadOption(document.querySelector('.property-image-container'));
+  
+  // Update PDF if one exists
+  if (pdfDoc) {
+    generateUpdatedPDF();
+  }
+}
+
+// Enhanced function to show image upload option
+function showImageUploadOption(container) {
+  container.innerHTML = `
+    <div class="image-upload-zone">
+      <div class="upload-area" onclick="document.getElementById('image-upload').click()">
+        <div class="upload-icon">📁</div>
+        <div class="upload-text">
+          <div class="upload-title">Upload Property Image</div>
+          <div class="upload-subtitle">Click to select or drag & drop</div>
+          <div class="upload-specs">Recommended: 800×600px • Max 10MB • JPG, PNG, GIF</div>
+        </div>
+      </div>
+      <input type="file" id="image-upload" accept="image/*" style="display: none;" onchange="handleImageUpload(event)">
+    </div>
+  `;
+  
+  // Add drag and drop functionality
+  const uploadArea = container.querySelector('.upload-area');
+  
+  uploadArea.addEventListener('dragover', (e) => {
+    e.preventDefault();
+    uploadArea.classList.add('drag-over');
+  });
+  
+  uploadArea.addEventListener('dragleave', (e) => {
+    e.preventDefault();
+    uploadArea.classList.remove('drag-over');
+  });
+  
+  uploadArea.addEventListener('drop', (e) => {
+    e.preventDefault();
+    uploadArea.classList.remove('drag-over');
+    
+    const files = e.dataTransfer.files;
+    if (files.length > 0) {
+      // Simulate file input change event
+      const fileInput = document.getElementById('image-upload');
+      fileInput.files = files;
+      handleImageUpload({ target: { files: files } });
+    }
+  });
+}
