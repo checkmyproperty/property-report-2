@@ -62,52 +62,82 @@ class FortBendCountyScraper {
   }
 
   async searchFBCAD(searchQuery) {
-    try {
-      const searchUrl = 'https://esearch.fbcad.org/Search/Result';
+  try {
+    const searchUrl = 'https://esearch.fbcad.org/Search/Result';
+    
+    console.log('🔍 Accessing FBCAD search...');
+    
+    // Make the search request
+    await this.delay();
+    const response = await this.session.get(`${searchUrl}?keywords=${encodeURIComponent(searchQuery)}`);
+    
+    if (response.status !== 200) {
+      console.log(`❌ Cannot access FBCAD search: ${response.status}`);
+      return { error: 'FBCAD search page not accessible' };
+    }
+    
+    console.log('✅ Successfully loaded FBCAD search results');
+    
+    // Parse search results to find property links
+    const $ = cheerio.load(response.data);
+    
+    // UPDATED: Look for table rows instead of specific CSS classes
+    const propertyResults = $('table tr, tbody tr, .results-table tr');
+    
+    // Skip header row if present
+    const dataRows = propertyResults.filter((i, el) => {
+      const rowText = $(el).text().toLowerCase();
+      return !rowText.includes('quick ref') && !rowText.includes('owner name') && $(el).find('td').length > 0;
+    });
+    
+    if (dataRows.length === 0) {
+      console.log('❌ No property results found');
       
-      console.log('🔍 Accessing FBCAD search...');
-      
-      // Make the search request
-      await this.delay();
-      const response = await this.session.get(`${searchUrl}?keywords=${encodeURIComponent(searchQuery)}`);
-      
-      if (response.status !== 200) {
-        console.log(`❌ Cannot access FBCAD search: ${response.status}`);
-        return { error: 'FBCAD search page not accessible' };
+      // Check if there's an error message
+      const errorMsg = $('.alert-danger, .error-message, .no-results').text().trim();
+      if (errorMsg) {
+        return { error: `FBCAD search error: ${errorMsg}` };
       }
       
-      console.log('✅ Successfully loaded FBCAD search results');
-      
-      // Parse search results to find property links
-      const $ = cheerio.load(response.data);
-      
-      // Look for property result items
-      const propertyResults = $('.search-results-property, .property-card, .search-result-item');
-      
-      if (propertyResults.length === 0) {
-        console.log('❌ No property results found');
-        
-        // Check if there's an error message
-        const errorMsg = $('.alert-danger, .error-message').text().trim();
-        if (errorMsg) {
-          return { error: `FBCAD search error: ${errorMsg}` };
-        }
-        
-        return { error: 'No property results found' };
-      }
-      
-      console.log(`✅ Found ${propertyResults.length} potential property results`);
-      
-      // Get the first property link
-      const propertyLink = propertyResults.first().find('a[href*="Property/"], a[href*="Detail/"]').first();
-      
-      if (!propertyLink.length) {
-        console.log('❌ No property detail links found in search results');
-        
-        // Try to extract some basic info from the search results
-        return this.extractFromSearchResults($, propertyResults.first());
-      }
-      
+      return { error: 'No property results found' };
+    }
+    
+    console.log(`✅ Found ${dataRows.length} potential property results`);
+    
+    // Get the first data row
+    const firstRow = dataRows.first();
+    
+    // Extract basic data from the table row
+    const data = {
+      source: 'Fort Bend County Appraisal District',
+      url: `${searchUrl}?keywords=${encodeURIComponent(searchQuery)}`
+    };
+    
+    // Extract account number (Quick Ref ID)
+    const accountCell = firstRow.find('td').eq(0); // Usually first column
+    if (accountCell.length) {
+      data.accountNumber = accountCell.text().trim();
+      console.log(`✅ Found Account Number: ${data.accountNumber}`);
+    }
+    
+    // Extract owner name
+    const ownerCell = firstRow.find('td').eq(2); // Usually third column based on your screenshot
+    if (ownerCell.length) {
+      data.owner = ownerCell.text().trim();
+      console.log(`✅ Found Owner: ${data.owner}`);
+    }
+    
+    // Extract address
+    const addressCell = firstRow.find('td').eq(4); // Usually last column
+    if (addressCell.length) {
+      data.propertyAddress = addressCell.text().trim();
+      console.log(`✅ Found Address: ${data.propertyAddress}`);
+    }
+    
+    // Look for property detail links
+    const propertyLink = firstRow.find('a').first();
+    
+    if (propertyLink.length) {
       const detailUrl = propertyLink.attr('href');
       const fullDetailUrl = detailUrl.startsWith('http') ? detailUrl : new URL(detailUrl, 'https://esearch.fbcad.org').href;
       
@@ -117,22 +147,20 @@ class FortBendCountyScraper {
       await this.delay();
       const detailResponse = await this.session.get(fullDetailUrl);
       
-      if (detailResponse.status !== 200) {
-        console.log(`❌ Property detail page error: ${detailResponse.status}`);
-        return { 
-          error: `Property detail page error: ${detailResponse.status}`,
-          url: fullDetailUrl
-        };
+      if (detailResponse.status === 200) {
+        const detailData = await this.parsePropertyDetailPage(detailResponse.data, fullDetailUrl);
+        return { ...data, ...detailData };
       }
-      
-      // Parse the property detail page
-      return this.parsePropertyDetailPage(detailResponse.data, fullDetailUrl);
-      
-    } catch (error) {
-      console.error('FBCAD search error:', error.message);
-      return { error: `FBCAD search failed: ${error.message}` };
     }
+    
+    console.log('✅ Successfully extracted basic property data from table');
+    return data;
+    
+  } catch (error) {
+    console.error('FBCAD search error:', error.message);
+    return { error: `FBCAD search failed: ${error.message}` };
   }
+}
 
   // Extract basic info from search results if we can't get to the detail page
   extractFromSearchResults($, resultElement) {

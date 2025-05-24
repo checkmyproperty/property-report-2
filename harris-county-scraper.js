@@ -80,8 +80,30 @@ async searchHCADQuickSearch(address) {
     
     const $ = cheerio.load(response.data);
     
-    // Look for the main search input field
-    const searchInput = $('input[type="text"]').first(); // Usually the main search box
+    // Look for ANY text input field (HCAD might have different field names)
+    const searchInput = $('input[type="text"]').filter((i, el) => {
+      const $el = $(el);
+      const name = $el.attr('name') || '';
+      const id = $el.attr('id') || '';
+      const placeholder = $el.attr('placeholder') || '';
+      
+      // Look for search-related inputs
+      return name.toLowerCase().includes('search') || 
+             name.toLowerCase().includes('address') ||
+             id.toLowerCase().includes('search') ||
+             id.toLowerCase().includes('address') ||
+             placeholder.toLowerCase().includes('search') ||
+             placeholder.toLowerCase().includes('address');
+    }).first();
+    
+    if (!searchInput.length) {
+      console.log('❌ No search input field found, trying first text input');
+      const firstInput = $('input[type="text"]').first();
+      if (!firstInput.length) {
+        return { error: 'No search input field found on HCAD page' };
+      }
+    }
+    
     const searchForm = searchInput.closest('form');
     
     if (!searchForm.length) {
@@ -94,32 +116,48 @@ async searchHCADQuickSearch(address) {
     // Prepare form data
     const formData = new URLSearchParams();
     
-    // Add hidden fields from the form
+    // Add ALL hidden fields (including CSRF tokens, view state, etc.)
     searchForm.find('input[type="hidden"]').each((i, input) => {
       const name = $(input).attr('name');
       const value = $(input).attr('value');
+      if (name && value !== undefined) {
+        formData.append(name, value);
+        console.log(`   Hidden field: ${name} = ${value.substring(0, 50)}...`);
+      }
+    });
+    
+    // Add other form fields with default values
+    searchForm.find('select, input[type="radio"]:checked, input[type="checkbox"]:checked').each((i, input) => {
+      const name = $(input).attr('name');
+      const value = $(input).val();
       if (name && value) {
         formData.append(name, value);
       }
     });
     
-    // Add the search address to the main search field
-    const searchInputName = searchInput.attr('name') || 'search';
+    // Add the search address
+    const searchInputName = searchInput.attr('name') || searchInput.attr('id') || 'search';
     formData.append(searchInputName, address);
     
     console.log(`🔄 Submitting search for: ${address}`);
+    console.log(`   Using field name: ${searchInputName}`);
     
     // Get form action
     const formAction = searchForm.attr('action') || searchUrl;
     const submitUrl = formAction.startsWith('http') ? formAction : new URL(formAction, searchUrl).href;
     
-    // Submit the search
+    console.log(`   Submitting to: ${submitUrl}`);
+    
+    // Submit the search with additional headers
     await this.delay();
     const searchResponse = await this.session.post(submitUrl, formData, {
       headers: {
         'Content-Type': 'application/x-www-form-urlencoded',
-        'Referer': searchUrl
-      }
+        'Referer': searchUrl,
+        'Origin': 'https://hcad.org',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8'
+      },
+      maxRedirects: 10 // Allow redirects
     });
     
     if (searchResponse.status !== 200) {
@@ -129,60 +167,129 @@ async searchHCADQuickSearch(address) {
     
     console.log('✅ Search submitted successfully');
     
-    // Parse the results - look for the account number and property details
+    // Parse the results with multiple strategies
     const $results = cheerio.load(searchResponse.data);
     
-    const propertyResults = $results('tr, .property-result, .search-result');
+    // Strategy 1: Look for table results
+    let dataRows = $results('table tr, tbody tr').filter((i, el) => {
+      const $row = $results(el);
+      const cells = $row.find('td');
+      return cells.length >= 2; // Must have at least 2 columns
+    });
     
-    if (propertyResults.length === 0) {
+    // Strategy 2: Look for div-based results
+    if (dataRows.length === 0) {
+      dataRows = $results('.property-result, .search-result, .result-item, [class*="result"]');
+    }
+    
+    // Strategy 3: Look for any element containing account numbers
+    if (dataRows.length === 0) {
+      dataRows = $results('*').filter((i, el) => {
+        const text = $results(el).text();
+        return /\b\d{10,}\b/.test(text); // Look for long numbers (account IDs)
+      });
+    }
+    
+    if (dataRows.length === 0) {
       console.log('❌ No search results found');
+      
+      // Check for error messages
+      const errorSelectors = [
+        '.error, .alert-danger, .no-results',
+        '[class*="error"]', '[class*="alert"]',
+        '*:contains("No results")', '*:contains("not found")'
+      ];
+      
+      for (const selector of errorSelectors) {
+        const errorEl = $results(selector);
+        if (errorEl.length) {
+          const errorMsg = errorEl.text().trim();
+          if (errorMsg) {
+            return { error: `HCAD search error: ${errorMsg}` };
+          }
+        }
+      }
+      
       return { error: 'No property results found' };
     }
     
-    // Extract data from the results table 
+    console.log(`✅ Found ${dataRows.length} potential result rows`);
+    
+    // Extract data from the first result
     const data = {
       source: 'Harris County Appraisal District',
       url: submitUrl
     };
     
-    // Look for account number 
-    const accountText = $results.text();
-    const accountMatch = accountText.match(/(\d{10,})/); // Long account numbers
-    if (accountMatch) {
-      data.accountNumber = accountMatch[1];
-      console.log(`✅ Found Account Number: ${data.accountNumber}`);
+    const firstResult = dataRows.first();
+    
+    // Extract account number (try multiple patterns)
+    const resultText = firstResult.text();
+    const accountPatterns = [
+      /Account[:\s]*(\d{10,})/i,
+      /ID[:\s]*(\d{10,})/i,
+      /\b(\d{12,})\b/, // Very long numbers
+      /\b(\d{10,11})\b/ // 10-11 digit numbers
+    ];
+    
+    for (const pattern of accountPatterns) {
+      const match = resultText.match(pattern);
+      if (match) {
+        data.accountNumber = match[1];
+        console.log(`✅ Found Account Number: ${data.accountNumber}`);
+        break;
+      }
     }
     
-    // Look for owner name 
-    const ownerElement = $results('td:contains("Business"), td:contains("Owner")').next();
-    if (ownerElement.length) {
-      data.owner = ownerElement.text().trim();
+    // Extract owner name
+    const ownerPatterns = [
+      /Owner[:\s]*([A-Z][A-Z\s,.-]+)/i,
+      /Name[:\s]*([A-Z][A-Z\s,.-]+)/i
+    ];
+    
+    for (const pattern of ownerPatterns) {
+      const match = resultText.match(pattern);
+      if (match && match[1].length > 3 && match[1].length < 100) {
+        data.owner = match[1].trim();
+        console.log(`✅ Found Owner: ${data.owner}`);
+        break;
+      }
     }
     
-    // Look for full address
-    const addressElement = $results('td').filter((i, el) => {
-      return $(el).text().includes('HOUSTON') || $(el).text().includes('TX');
-    });
-    if (addressElement.length) {
-      data.propertyAddress = addressElement.text().trim();
+    // Extract address
+    const addressPatterns = [
+      /Address[:\s]*([A-Z0-9][A-Z0-9\s,.-]+(?:HOUSTON|TX|TEXAS))/i,
+      /([0-9]+\s+[A-Z][A-Z0-9\s,.-]+(?:HOUSTON|TX))/i
+    ];
+    
+    for (const pattern of addressPatterns) {
+      const match = resultText.match(pattern);
+      if (match && match[1].length > 10) {
+        data.propertyAddress = match[1].trim();
+        console.log(`✅ Found Address: ${data.propertyAddress}`);
+        break;
+      }
     }
     
-    // Try to find a detail link to get more property information
-    const detailLink = $results('a[href*="account"], a[href*="detail"], a[href*="property"]').first();
+    // Look for detail links
+    const detailLink = firstResult.find('a').first();
     
     if (detailLink.length) {
       const detailUrl = detailLink.attr('href');
-      const fullDetailUrl = detailUrl.startsWith('http') ? detailUrl : new URL(detailUrl, searchUrl).href;
+      const fullDetailUrl = detailUrl.startsWith('http') ? detailUrl : new URL(detailUrl, 'https://hcad.org').href;
       
       console.log(`🔍 Following property detail link: ${fullDetailUrl}`);
       
-      // Get detailed property information
-      await this.delay();
-      const detailResponse = await this.session.get(fullDetailUrl);
-      
-      if (detailResponse.status === 200) {
-        const detailData = this.parsePropertyDetailPage(detailResponse.data, fullDetailUrl);
-        return { ...data, ...detailData };
+      try {
+        await this.delay();
+        const detailResponse = await this.session.get(fullDetailUrl);
+        
+        if (detailResponse.status === 200) {
+          const detailData = await this.parsePropertyDetailPage(detailResponse.data, fullDetailUrl);
+          return { ...data, ...detailData };
+        }
+      } catch (detailError) {
+        console.log(`⚠️ Detail page error: ${detailError.message}`);
       }
     }
     
